@@ -259,6 +259,52 @@ var tomb = [{ id: "a", deleted: true, updatedAt: "2026-03-01T00:00:00.000Z" }];
 eq("a deletion travels", mergeInto(newer, tomb)[0].deleted, true);
 eq("and an old backup cannot undo it", mergeInto(tomb, older)[0].deleted, true);
 
+/* ── whole dates in the month column ── */
+
+group("day-first dates");
+eq("dotted, as Excel writes it here", app.parseMonth("01.08.2026", 2026).key, "2026-08");
+eq("slashed", app.parseMonth("01/08/2026", 2026).key, "2026-08");
+eq("dashed", app.parseMonth("01-08-2026", 2026).key, "2026-08");
+eq("single digits", app.parseMonth("1.8.2026", 2026).key, "2026-08");
+eq("a two-digit year", app.parseMonth("01.08.26", 2026).key, "2026-08");
+eq("mid-month, since only the month is kept", app.parseMonth("15.08.2026", 2026).key, "2026-08");
+eq("the last of the month", app.parseMonth("31.12.2026", 2026).key, "2026-12");
+// 15 cannot be a month, so this one is unambiguous whatever the convention.
+eq("a file written the American way still lands right", app.parseMonth("08/15/2026", 2026).key, "2026-08");
+eq("and the year-first forms still work", app.parseMonth("2026-08-01", 2026).key, "2026-08");
+eq("as do month and year alone", app.parseMonth("08.2026", 2026).key, "2026-08");
+ok("nonsense is still refused", !!app.parseMonth("abc", 2026).error);
+
+/* ── a real file, exactly as it arrives ── */
+
+group("a real targets file");
+var realRows = [
+  ["month", "store_id", "store_name", "sales", "trafic", "conversion", "upt", "asp", "sot"],
+  ["01.08.2026", "0Ц-000018", "JNS МОС Авиапарк", "15112500", "10000", "0.075", "1.55", "13000", " 1,511 "],
+  ["01.08.2026", "0Ц-000019", "JNS МОС Атриум", "9741600", "4500", "0.11", "1.6", "12300", " 2,165 "]
+];
+var realLayout = app.detectLayout(realRows, null);
+eq("it reads as one row per store-month", realLayout.kind, "targets-long");
+eq("nothing in the header is ignored", realLayout.ignored.length, 0);
+ok("even though traffic is spelled trafic", realLayout.metricCols.traffic === 4);
+
+var realBuilt = app.buildTargetRows(realRows, realLayout, null, null,
+  { "0Ц-000018": true, "0Ц-000019": true });
+eq("both rows come in", realBuilt.items.filter(function (i) { return i.row; }).length, 2);
+var first = realBuilt.items[0].row;
+eq("a Cyrillic store ID survives intact", first.storeId, "0Ц-000018");
+eq("the month", first.month, "2026-08");
+near("sales", first.sales, 15112500);
+near("traffic", first.traffic, 10000);
+near("conversion stays the fraction it already was", first.conversion, 0.075);
+near("ASP", first.asp, 13000);
+near("SOT, with its spaces and thousands comma", first.sot, 1511);
+
+// Sales = Traffic x Conversion x UPT x ASP, to the rouble.
+near("the file's own arithmetic holds", app.impliedSales(first), 15112500);
+eq("so nothing is flagged as inconsistent",
+   app.checksFor(first).filter(function (c) { return c.off; }).length, 0);
+
 /* ── brands ── */
 
 group("brands");

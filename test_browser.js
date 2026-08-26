@@ -396,10 +396,65 @@ function run() {
       eq("the edit is saved", stores.filter(function (s) { return s.storeId === "S001"; })[0].storeManager, "J. Okonkwo");
     })
 
+    /* ── a real file, pasted in ── */
+    .then(function () {
+      console.log("a real paste");
+      return page.click('.tab[data-screen="import"]');
+    })
+    .then(function () { return page.selectOption("#import-kind", "stores"); })
+    .then(function () {
+      return page.fill("#import-paste", [
+        "store_id\tstore_name\tbrand\tchannel",
+        "0Ц-000018\tJNS МОС Авиапарк\tMulti\tRetail",
+        "0Ц-000019\tJNS МОС Атриум\tMulti\tRetail"
+      ].join("\n"));
+    })
+    .then(function () { return page.click("#btn-parse"); })
+    .then(function () { return page.waitForTimeout(200); })
+    .then(function () { return page.click("#import-report .btn-primary"); })
+    .then(function () { return page.waitForTimeout(200); })
+    .then(function () { return stored(page, "retailos-stores"); })
+    .then(function (stores) {
+      var cyr = stores.filter(function (s) { return s.storeId === "0Ц-000018"; })[0];
+      ok("a Cyrillic store ID survives the round trip", !!cyr, JSON.stringify(stores.map(function (s) { return s.storeId; })));
+      eq("with its name", cyr.storeName, "JNS МОС Авиапарк");
+    })
+
+    // Applying moves to the screen the rows landed on, so come back.
+    .then(function () { return page.click('.tab[data-screen="import"]'); })
+    .then(function () { return page.selectOption("#import-kind", "targets"); })
+    .then(function () {
+      return page.fill("#import-paste", [
+        "month\tstore_id\tstore_name\tsales\ttrafic\tconversion\tupt\tasp\tsot",
+        "01.08.2026\t0Ц-000018\tJNS МОС Авиапарк\t15112500\t10000\t0.075\t1.55\t13000\t 1,511 ",
+        "01.08.2026\t0Ц-000019\tJNS МОС Атриум\t9741600\t4500\t0.11\t1.6\t12300\t 2,165 "
+      ].join("\n"));
+    })
+    .then(function () { return page.click("#btn-parse"); })
+    .then(function () { return page.waitForTimeout(200); })
+    .then(function () { return tally(page, "add"); })
+    .then(function (count) { eq("both store-months are new", count, 2); })
+    .then(function () { return page.locator("#import-report").textContent(); })
+    .then(function (text) {
+      ok("and nothing was left out", !/left out/.test(text) || /0 left out/.test(text), text.slice(0, 200));
+      return page.click("#import-report .btn-primary");
+    })
+    .then(function () { return page.waitForTimeout(200); })
+    .then(function () { return stored(page, "retailos-targets"); })
+    .then(function (targets) {
+      var august = targets.filter(function (t) { return t.storeId === "0Ц-000018" && t.month === "2026-08"; })[0];
+      ok("the dotted date landed in August 2026", !!august, JSON.stringify(targets.map(function (t) { return t.month; })));
+      near("sales", august.sales, 15112500);
+      near("traffic came in despite the typo in the header", august.traffic, 10000);
+      near("conversion is left as the fraction it was", august.conversion, 0.075);
+      near("SOT read past its spaces and comma", august.sot, 1511);
+    })
+
     /* ── brand, kept apart from channel ── */
     .then(function () {
       console.log("brand");
-      return page.click('#store-list .card:has-text("S002")');
+      return page.click('.tab[data-screen="stores"]')
+        .then(function () { return page.click('#store-list .card:has-text("S002")'); });
     })
     .then(function () { return page.locator("#f-storeBrand option").allTextContents(); })
     .then(function (options) {
@@ -507,7 +562,7 @@ function run() {
     })
     .then(function () { return page.locator("#store-list .card").count(); })
     .then(function (count) {
-      eq("the stores survive a reload", count, 5);
+      eq("the stores survive a reload", count, 7);
       return page.locator("#topbar-sub").textContent();
     })
     .then(function (text) {
@@ -580,7 +635,7 @@ function run() {
       stores.forEach(function (s) { byId[s.storeId] = s; });
       ok("a store only the server had arrives", !!byId.S900 && byId.S900.storeName === "Leeds Trinity");
       eq("and a newer version of a store this device had wins", byId.S001.storeManager, "Server Wins");
-      eq("nothing else is lost", stores.filter(function (s) { return !s.deleted; }).length, 6);
+      eq("nothing else is lost", stores.filter(function (s) { return !s.deleted; }).length, 8);
     })
 
     /* what went up */
@@ -643,7 +698,7 @@ function run() {
     .then(function (text) { eq("and the badge is honest about it again", text.trim(), "On this device"); })
     .then(function () { return stored(page, "retailos-stores"); })
     .then(function (stores) {
-      eq("the data stays on the device", stores.filter(function (s) { return !s.deleted; }).length, 6);
+      eq("the data stays on the device", stores.filter(function (s) { return !s.deleted; }).length, 8);
     })
 
     .then(function () { return browser.close(); })

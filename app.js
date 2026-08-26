@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 4;
+  var VERSION = 5;
 
   var K = {
     stores:   "retailos-stores",
@@ -235,6 +235,22 @@
     // 03/2026, 3-2026
     m = /^(\d{1,2})[-/.](\d{4})$/.exec(text);
     if (m) return finishMonth(parseInt(m[2], 10), parseInt(m[1], 10));
+
+    // 01.08.2026, 01/08/2026, 1-8-26 — a whole date where the year comes
+    // last. Day first, as written everywhere outside the United States.
+    // Only the month is kept; which day of it was named does not matter.
+    m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/.exec(text);
+    if (m) {
+      var first = parseInt(m[1], 10);
+      var second = parseInt(m[2], 10);
+      var year = parseInt(m[3], 10);
+      if (m[3].length === 2) year += year < 70 ? 2000 : 1900;
+      // Day first unless the numbers say otherwise: past the 12th, a value
+      // cannot be a month, so a file written the American way still reads
+      // correctly rather than silently landing in the wrong month.
+      var month = first > 12 ? second : (second > 12 ? first : second);
+      return finishMonth(year, month);
+    }
 
     // Mar-26, March 2026, Mar 26, Mar.26
     m = /^([A-Za-z]{3,9})[\s\-./]*(\d{2}|\d{4})?$/.exec(text);
@@ -1198,7 +1214,8 @@
 
   var METRIC_SYN = {
     sales:      ["salestarget", "sales", "salestgt", "targetsales", "turnover", "revenue", "netsales", "netsalestarget", "value", "salesvalue"],
-    traffic:    ["traffictarget", "traffic", "footfall", "footfalltarget", "visitors", "entries", "counter", "trafficgoal"],
+    traffic:    ["traffictarget", "traffic", "footfall", "footfalltarget", "visitors", "entries", "counter", "trafficgoal",
+                 "trafic", "traffik", "trafik", "traffictgt", "footfal", "traficktarget", "trafictarget"],
     conversion: ["conversiontarget", "conversion", "conv", "convrate", "conversionrate", "cr", "convtarget", "cvr"],
     upt:        ["upttarget", "upt", "unitspertransaction", "unitspertxn", "ipt", "itemspertransaction", "uptgoal"],
     asp:        ["asptarget", "asp", "averagesellingprice", "avgsellingprice", "avgprice", "averageprice", "aur", "asptgt"],

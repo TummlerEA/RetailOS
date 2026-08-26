@@ -26,7 +26,9 @@ Everything is on one screen's worth of tabs: **Stores**, **Targets**,
 - **Loading from Excel.** Either paste a block of cells straight out of
   Excel, or pick an `.xlsx` or `.csv` file. Both layouts real target files
   arrive in are understood: one row per store-month, and months across the
-  top. Nothing is written until a preview has shown exactly what would
+  top. Dates are read day-first — `01.08.2026`, `01/08/2026` and `2026-08-01`
+  all mean August 2026 — and headers are matched loosely enough that a
+  misspelt `trafic` still lands on Traffic. Nothing is written until a preview has shown exactly what would
   change.
 - **Export.** A JSON backup, and two flat CSVs shaped for Power BI.
 - **Sync.** Sign in and the same data is on the laptop, the phone and in
