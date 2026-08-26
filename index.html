@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>RetailOS</title>
+<link rel="stylesheet" href="style.css?v=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏬</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-main">
+    <h1>RetailOS</h1>
+    <span class="badge" id="mode-badge" title="Where data is stored">On this device</span>
+  </div>
+  <div class="topbar-sub" id="topbar-sub"></div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab is-active" id="tab-stores" role="tab" data-screen="stores">Stores</button>
+  <button class="tab" id="tab-targets" role="tab" data-screen="targets">Targets</button>
+  <button class="tab" id="tab-import" role="tab" data-screen="import">Import</button>
+  <button class="tab" id="tab-settings" role="tab" data-screen="settings">Settings</button>
+</nav>
+
+<main>
+
+  <!-- ───────────────────────── Stores ───────────────────────── -->
+  <section class="screen is-active" id="screen-stores">
+    <div class="toolbar">
+      <input type="search" id="store-search" placeholder="Search stores" autocomplete="off">
+      <button class="btn btn-primary" id="btn-add-store">+ Store</button>
+    </div>
+    <p class="muted" id="store-count"></p>
+    <div id="store-list" class="cards"></div>
+  </section>
+
+  <!-- ───────────────────────── Targets ───────────────────────── -->
+  <section class="screen" id="screen-targets">
+    <div class="toolbar">
+      <select id="target-view" aria-label="How to lay out the grid">
+        <option value="by-month">One month, all stores</option>
+        <option value="by-store">One store, all months</option>
+      </select>
+      <select id="target-month" aria-label="Month"></select>
+      <select id="target-store" aria-label="Store" hidden></select>
+    </div>
+    <div class="toolbar toolbar-tight">
+      <button class="btn" id="btn-fill-down" title="Copy the first filled row down into every empty row below it">Fill down</button>
+      <label class="check"><input type="checkbox" id="chk-variance" checked> Check the maths</label>
+    </div>
+    <p class="empty" id="target-empty" hidden>Add or import your stores first — targets hang off them.</p>
+    <div class="grid-wrap"><table class="grid" id="target-grid"></table></div>
+    <p class="muted" id="target-summary"></p>
+  </section>
+
+  <!-- ───────────────────────── Import ───────────────────────── -->
+  <section class="screen" id="screen-import">
+    <h2>Load from Excel</h2>
+    <p class="muted">
+      Two ways in. Either copy a block of cells straight out of Excel and paste it below,
+      or pick an <code>.xlsx</code> / <code>.csv</code> file. Nothing is saved until you
+      have seen the preview and pressed Apply.
+    </p>
+
+    <div class="field">
+      <label for="import-kind">What is this?</label>
+      <select id="import-kind">
+        <option value="auto">Work it out from the headers</option>
+        <option value="stores">Stores</option>
+        <option value="targets">Targets</option>
+      </select>
+    </div>
+
+    <div class="field" id="field-metric" hidden>
+      <label for="import-metric">Which target is in the grid?</label>
+      <select id="import-metric"></select>
+      <p class="hint">The columns look like months, so every number is one metric. Say which.</p>
+    </div>
+
+    <div class="field">
+      <label for="import-year">Year to assume, if a month doesn't say</label>
+      <input type="number" id="import-year" min="2000" max="2100" step="1" placeholder="e.g. 2026">
+    </div>
+
+    <div class="field">
+      <label for="import-file">File</label>
+      <input type="file" id="import-file" accept=".xlsx,.xlsm,.csv,.tsv,.txt">
+    </div>
+
+    <div class="field">
+      <label for="import-paste">…or paste from Excel</label>
+      <textarea id="import-paste" rows="7" spellcheck="false"
+        placeholder="Select the cells in Excel including the header row, copy, and paste here."></textarea>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn btn-primary" id="btn-parse">Preview</button>
+      <button class="btn" id="btn-clear-import">Clear</button>
+    </div>
+
+    <div id="import-report"></div>
+
+    <details class="note">
+      <summary>Templates &amp; accepted layouts</summary>
+      <p>Download a starting point:</p>
+      <p>
+        <button class="btn btn-small" id="btn-tpl-stores">Stores template</button>
+        <button class="btn btn-small" id="btn-tpl-targets-long">Targets, one row per month</button>
+        <button class="btn btn-small" id="btn-tpl-targets-wide">Targets, months across</button>
+      </p>
+      <p class="muted">
+        Header names are matched loosely — <code>Store ID</code>, <code>storeid</code> and
+        <code>Store No</code> all land in the same place. Months are read from
+        <code>2026-03</code>, <code>Mar-26</code>, <code>March 2026</code>, <code>03/2026</code>
+        and real Excel dates. Re-importing the same file twice changes nothing the second time.
+      </p>
+    </details>
+  </section>
+
+  <!-- ───────────────────────── Settings ───────────────────────── -->
+  <section class="screen" id="screen-settings">
+    <h2>Settings</h2>
+
+    <div class="field">
+      <label for="set-currency">Currency</label>
+      <input type="text" id="set-currency" maxlength="3" placeholder="GBP" autocomplete="off">
+      <p class="hint">One currency throughout, for formatting only — nothing is converted.</p>
+    </div>
+
+    <h2>Export &amp; backup</h2>
+    <p class="muted">
+      There is one copy of this data and it lives in this browser. Keep a backup.
+      Safari deletes storage for sites left unopened for a week or so.
+    </p>
+    <div class="toolbar wrap">
+      <button class="btn" id="btn-export-json">JSON backup</button>
+      <button class="btn" id="btn-export-stores">Stores CSV</button>
+      <button class="btn" id="btn-export-targets">Targets CSV</button>
+    </div>
+    <div class="field">
+      <label for="restore-file">Restore from a JSON backup</label>
+      <input type="file" id="restore-file" accept=".json">
+      <p class="hint">Merges rather than replaces — the newer version of each record wins.</p>
+    </div>
+
+    <h2>Storage</h2>
+    <p class="muted" id="storage-info"></p>
+
+    <h2 class="danger-h">Danger zone</h2>
+    <div class="toolbar">
+      <button class="btn btn-danger" id="btn-reset">Delete everything</button>
+    </div>
+
+    <p class="muted" id="app-version"></p>
+  </section>
+
+</main>
+
+<!-- Store editor -->
+<dialog id="store-dialog">
+  <form method="dialog" id="store-form">
+    <h2 id="store-dialog-title">Store</h2>
+    <div class="field">
+      <label for="f-storeId">Store ID <span class="req">required</span></label>
+      <input type="text" id="f-storeId" required autocomplete="off" maxlength="32">
+      <p class="hint">The join key for Power BI. Stable forever — never reuse or renumber it.</p>
+    </div>
+    <div class="field">
+      <label for="f-storeName">Store name <span class="req">required</span></label>
+      <input type="text" id="f-storeName" required autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="f-storeManager">Store manager</label>
+      <input type="text" id="f-storeManager" autocomplete="off">
+      <p class="hint">Name only. Don't put contact details in here.</p>
+    </div>
+    <div class="field">
+      <label for="f-storeChannel">Channel</label>
+      <select id="f-storeChannel"></select>
+    </div>
+    <div class="field">
+      <label for="f-country">Country</label>
+      <input type="text" id="f-country" autocomplete="off" maxlength="40">
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="f-openDate">Opened</label>
+        <input type="date" id="f-openDate">
+      </div>
+      <div class="field">
+        <label for="f-closeDate">Closed</label>
+        <input type="date" id="f-closeDate">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="f-salesArea">Sales area (m²)</label>
+        <input type="number" id="f-salesArea" min="0" step="0.1">
+      </div>
+      <div class="field">
+        <label for="f-status">Status</label>
+        <select id="f-status">
+          <option value="active">Active</option>
+          <option value="pipeline">Pipeline</option>
+          <option value="closed">Closed</option>
+        </select>
+      </div>
+    </div>
+    <p class="error" id="store-error" hidden></p>
+    <menu>
+      <button type="button" class="btn btn-danger" id="btn-delete-store">Delete</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="btn-cancel-store">Cancel</button>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </menu>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js?v=1"></script>
+</body>
+</html>
