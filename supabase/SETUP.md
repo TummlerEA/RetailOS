@@ -48,6 +48,17 @@ not have to click a link in an email. Repeat for each person. Send them the
 password by whatever channel you would normally send a password, and have
 them change it on first sign-in.
 
+**Generate each password in a password manager** — twenty or more random
+characters. Supabase can check new passwords against HaveIBeenPwned, but
+only on the Pro plan, so on Free nothing will stop someone reusing the
+password they use everywhere else. A generated password makes the check
+moot: it was never in a breach to begin with. Reuse is the real risk here,
+and saying so when you hand the account over is the whole mitigation.
+
+Because step 3 turned self-signup off, this page is the only way an account
+comes into existence. That is what is protecting the data, so keep the list
+short and remove people here when they leave.
+
 ## 5. Collect the two things the app needs
 
 Top of the dashboard → **Connect**, or **Project Settings** → **API**.
