@@ -28,6 +28,11 @@ Left sidebar → **SQL Editor** → **New query**. Paste the whole of
 You should see `Success. No rows returned`. It is safe to run again if you
 are not sure it worked.
 
+Re-running it is also how the database is **upgraded**: when a column is
+added later, `schema.sql` adds it to what is already there, without touching
+the rows. That is the whole upgrade procedure — there is no separate
+migration to find.
+
 ### Check it worked
 
 Left sidebar → **Table Editor**: `stores` and `targets` should both be

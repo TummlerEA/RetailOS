@@ -10,9 +10,12 @@ Everything is on one screen's worth of tabs: **Stores**, **Targets**,
 
 ## What it does today
 
-- **Stores.** ID, name, manager, channel, country, status, opening and
-  closing dates, sales area. The store ID is the join key everything else
-  hangs off, so it is fixed once a store exists and cannot be retyped.
+- **Stores.** ID, name, manager, channel, country, address, latitude,
+  longitude, status, opening and closing dates, sales area. The store ID is
+  the join key everything else hangs off, so it is fixed once a store exists
+  and cannot be retyped. Coordinates are kept as text so the precision given
+  survives exactly, but only a real coordinate is accepted — both the
+  importer and the database check the range.
 - **Targets, by store by calendar month.** Sales, Traffic, Conversion, UPT,
   ASP and SOT — laid out either as one month across every store, or one
   store across every month, and editable in place like a spreadsheet.

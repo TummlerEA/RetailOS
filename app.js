@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 2;
+  var VERSION = 3;
 
   var K = {
     stores:   "retailos-stores",
@@ -568,6 +568,9 @@
       open_date: blankToNull(record.openDate),
       close_date: blankToNull(record.closeDate),
       sales_area: numberOrNull(record.salesArea),
+      address: blankToNull(record.address),
+      latitude: blankToNull(record.latitude),
+      longitude: blankToNull(record.longitude),
       updated_at: isoOrNull(record.updatedAt) || nowIso(),
       deleted: !!record.deleted
     };
@@ -578,7 +581,8 @@
     if (row.deleted) { record.deleted = true; return record; }
     [["storeName", "store_name"], ["storeManager", "store_manager"],
      ["storeChannel", "store_channel"], ["country", "country"], ["status", "status"],
-     ["openDate", "open_date"], ["closeDate", "close_date"]].forEach(function (pair) {
+     ["openDate", "open_date"], ["closeDate", "close_date"],
+     ["address", "address"], ["latitude", "latitude"], ["longitude", "longitude"]].forEach(function (pair) {
       var value = row[pair[1]];
       if (value !== null && value !== undefined && value !== "") record[pair[0]] = value;
     });
@@ -1177,7 +1181,10 @@
     { key: "status",       label: "Status",    syn: ["status", "state", "active"] },
     { key: "openDate",     label: "Opened",    syn: ["opendate", "opened", "openingdate", "dateopened"] },
     { key: "closeDate",    label: "Closed",    syn: ["closedate", "closed", "closingdate", "dateclosed"] },
-    { key: "salesArea",    label: "Sales area", syn: ["salesarea", "area", "sqm", "m2", "sellingarea", "sellingspace", "size", "squaremetres", "squaremeters"] }
+    { key: "salesArea",    label: "Sales area", syn: ["salesarea", "area", "sqm", "m2", "sellingarea", "sellingspace", "size", "squaremetres", "squaremeters"] },
+    { key: "address",      label: "Address",   syn: ["address", "streetaddress", "street", "addressline1", "addr", "postaladdress", "fulladdress", "location"] },
+    { key: "latitude",     label: "Latitude",  syn: ["latitude", "lat", "y", "geolat", "storelatitude"] },
+    { key: "longitude",    label: "Longitude", syn: ["longitude", "long", "lng", "lon", "x", "geolong", "storelongitude"] }
   ];
 
   var METRIC_SYN = {
@@ -1296,6 +1303,21 @@
 
   function pad2(n) { n = String(parseInt(n, 10)); return n.length < 2 ? "0" + n : n; }
 
+  // Kept as text so the precision given survives untouched, but only if it
+  // really is a coordinate. Excel hands these over as numbers as often as
+  // strings, and people paste "55.7446675° N" — the degree sign and the
+  // hemisphere letter are dropped, N and E being positive already.
+  function cleanCoordinate(value, limit) {
+    var text = cleanText(value);
+    if (!text) return null;
+    var negative = /[SW]\s*$/i.test(text) || /^\s*-/.test(text);
+    var digits = text.replace(/[^0-9.]/g, "");
+    if (!digits || !/^[0-9]+(\.[0-9]+)?$/.test(digits)) return null;
+    var size = Number(digits);
+    if (isNaN(size) || size > limit) return null;
+    return (negative ? "-" : "") + digits;
+  }
+
   function matchChannel(value) {
     var norm = normHeader(value);
     if (!norm) return "";
@@ -1355,6 +1377,10 @@
         var raw = row[layout.storeFieldCols[key]];
         if (key === "openDate" || key === "closeDate") record[key] = cleanDate(raw);
         else if (key === "salesArea") { var n = toNumber(raw); if (n !== null) record[key] = n; }
+        else if (key === "latitude" || key === "longitude") {
+          var coord = cleanCoordinate(raw, key === "latitude" ? 90 : 180);
+          if (coord !== null) record[key] = coord;
+        }
         else if (key === "storeChannel") record[key] = matchChannel(raw) || cleanText(raw);
         else if (key === "status") record[key] = normaliseStatus(raw);
         else record[key] = cleanText(raw);
@@ -1598,6 +1624,9 @@
     $("f-openDate").value = store ? (store.openDate || "") : "";
     $("f-closeDate").value = store ? (store.closeDate || "") : "";
     $("f-salesArea").value = store && store.salesArea !== undefined ? store.salesArea : "";
+    $("f-address").value = store ? (store.address || "") : "";
+    $("f-latitude").value = store ? (store.latitude || "") : "";
+    $("f-longitude").value = store ? (store.longitude || "") : "";
     $("f-status").value = store ? (store.status || "active") : "active";
     $("btn-delete-store").hidden = !store;
     $("store-error").hidden = true;
@@ -1628,6 +1657,9 @@
       openDate: open,
       closeDate: close,
       salesArea: area === null ? undefined : area,
+      address: $("f-address").value.trim(),
+      latitude: $("f-latitude").value.trim(),
+      longitude: $("f-longitude").value.trim(),
       status: $("f-status").value
     });
 
@@ -2181,7 +2213,8 @@
 
   function storesCsv() {
     var header = ["storeId", "storeName", "storeManager", "storeChannel", "country",
-                  "status", "openDate", "closeDate", "salesArea"];
+                  "status", "openDate", "closeDate", "salesArea",
+                  "address", "latitude", "longitude"];
     var rows = Data.liveStores().map(function (s) {
       return header.map(function (k) { return s[k] === undefined ? "" : s[k]; });
     });
@@ -2227,7 +2260,8 @@
   /* ── templates ── */
 
   function templateStores() {
-    var header = ["storeId", "storeName", "storeManager", "storeChannel", "country", "status", "openDate", "salesArea"];
+    var header = ["storeId", "storeName", "storeManager", "storeChannel", "country", "status",
+                   "openDate", "salesArea", "address", "latitude", "longitude"];
     return toCsv(header, [
       ["S001", "Oxford Street", "A. Kowalski", "Retail", "United Kingdom", "active", "2019-03-14", "420"],
       ["S002", "Bicester Village", "R. Mensah", "Outlet", "United Kingdom", "active", "2021-09-02", "260"],
@@ -2523,7 +2557,8 @@
       readWorkbook: readWorkbook, mergeById: mergeById,
       storeToRemote: storeToRemote, storeFromRemote: storeFromRemote,
       targetToRemote: targetToRemote, targetFromRemote: targetFromRemote,
-      newerHere: newerHere, authMessage: authMessage, restMessage: restMessage
+      newerHere: newerHere, authMessage: authMessage, restMessage: restMessage,
+      cleanCoordinate: cleanCoordinate
     };
   }
 

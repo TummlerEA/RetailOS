@@ -24,6 +24,9 @@ create table if not exists public.stores (
   open_date     date,
   close_date    date,
   sales_area    numeric(10, 2),
+  address       text,
+  latitude      text,
+  longitude     text,
   updated_at    timestamptz not null default now(),
   deleted       boolean     not null default false,
 
@@ -33,12 +36,48 @@ create table if not exists public.stores (
     check (store_channel is null or store_channel in
       ('Retail', 'Outlet', 'Concession', 'Franchise', 'Ecommerce', 'Pop-up')),
   constraint stores_closes_after_it_opens
-    check (close_date is null or open_date is null or close_date >= open_date)
+    check (close_date is null or open_date is null or close_date >= open_date),
+
+  -- Held as text so whatever precision was given survives exactly, but a
+  -- value that is not a number in range is a typo, not a coordinate — and
+  -- Power BI's map visuals cannot convert one. Checking here means a bad
+  -- one is caught on the way in rather than showing up off the coast of
+  -- Ghana, which is where 0,0 puts a store.
+  constraint stores_latitude_is_a_coordinate
+    check (latitude is null or
+      (latitude ~ '^-?[0-9]{1,2}(\.[0-9]+)?$' and latitude::numeric between -90 and 90)),
+  constraint stores_longitude_is_a_coordinate
+    check (longitude is null or
+      (longitude ~ '^-?[0-9]{1,3}(\.[0-9]+)?$' and longitude::numeric between -180 and 180))
 );
 
 comment on table  public.stores          is 'One row per store. The system of record for what the POS does not know.';
 comment on column public.stores.store_id is 'Stable forever. Never reused, never renumbered — Power BI joins on this.';
 comment on column public.stores.deleted  is 'A tombstone. Deleting for real would let an old device resurrect the row.';
+-- Adding the columns to a database created before they existed. Harmless on
+-- a fresh one, which already has them from the create table above. These
+-- come before the comments on them, which would otherwise be the first
+-- statement to fail on an upgrade.
+alter table public.stores add column if not exists address   text;
+alter table public.stores add column if not exists latitude  text;
+alter table public.stores add column if not exists longitude text;
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'stores_latitude_is_a_coordinate') then
+    alter table public.stores add constraint stores_latitude_is_a_coordinate
+      check (latitude is null or
+        (latitude ~ '^-?[0-9]{1,2}(\.[0-9]+)?$' and latitude::numeric between -90 and 90));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'stores_longitude_is_a_coordinate') then
+    alter table public.stores add constraint stores_longitude_is_a_coordinate
+      check (longitude is null or
+        (longitude ~ '^-?[0-9]{1,3}(\.[0-9]+)?$' and longitude::numeric between -180 and 180));
+  end if;
+end $$;
+
+comment on column public.stores.latitude is 'Decimal degrees as text, e.g. 55.7446675. Text so the given precision survives; Power BI converts.';
+comment on column public.stores.longitude is 'Decimal degrees as text, e.g. 37.5658937. Negative is west.';
 
 -- ─────────────────────────── targets ───────────────────────────
 
@@ -83,8 +122,8 @@ create index if not exists targets_month_idx on public.targets (month);
 
 -- ────────────────────── the view Power BI reads ──────────────────────
 --
--- Live rows only, the store's name and channel already joined on, and the
--- two identities worked out so the consistency check is visible in the
+-- Live rows only, the store's name, channel and location already joined on,
+-- and the two identities worked out so the consistency check is visible in the
 -- report rather than only in the app:
 --
 --   Sales = Traffic x Conversion x UPT x ASP
@@ -93,13 +132,23 @@ create index if not exists targets_month_idx on public.targets (month);
 -- security_invoker means the view obeys the row-level security below
 -- instead of quietly running as its owner.
 
-create or replace view public.targets_report
+-- Dropped rather than replaced: `create or replace view` can only add
+-- columns at the end of the list, so on a database that already has an
+-- older version of this view, inserting the location columns after country
+-- fails outright. Not cascade — if something ever does depend on this view,
+-- that should stop the script, not be quietly deleted.
+drop view if exists public.targets_report;
+
+create view public.targets_report
 with (security_invoker = on) as
 select
   t.store_id,
   s.store_name,
   s.store_channel,
   s.country,
+  s.address,
+  s.latitude,
+  s.longitude,
   t.month                                          as month_start,
   to_char(t.month, 'YYYY-MM')                      as month_key,
   t.sales                                          as sales_target,

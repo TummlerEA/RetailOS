@@ -199,6 +199,19 @@ var nameless = app.buildStoreRows([["Store ID", "Store Name", "Manager"], ["S009
   app.detectLayout([["Store ID", "Store Name", "Manager"], ["S009", "", "X"]], null));
 ok("a store with no name is rejected", !!nameless[0].bad);
 
+var located = [["Store ID", "Store Name", "Address", "Lat", "Long"],
+               ["S007", "Tverskaya", "12 Tverskaya St", "55.7446675", "37.5658937"]];
+var locatedRow = app.buildStoreRows(located, app.detectLayout(located, null))[0].row;
+eq("Lat is recognised as latitude", locatedRow.latitude, "55.7446675");
+eq("Long is recognised as longitude", locatedRow.longitude, "37.5658937");
+eq("and the address comes with it", locatedRow.address, "12 Tverskaya St");
+
+var swapped = [["Store ID", "Store Name", "Latitude", "Longitude"],
+               ["S008", "Somewhere", "137.5", "137.5"]];
+var swappedRow = app.buildStoreRows(swapped, app.detectLayout(swapped, null))[0].row;
+eq("a latitude past the pole is left out", swappedRow.latitude, undefined);
+eq("while the same number is a valid longitude", swappedRow.longitude, "137.5");
+
 var known = { S001: true };
 var built = app.buildTargetRows(longSheet, longLayout, null, null, known);
 eq("one store-month built", built.items.filter(function (i) { return i.row; }).length, 1);
@@ -240,6 +253,24 @@ var tomb = [{ id: "a", deleted: true, updatedAt: "2026-03-01T00:00:00.000Z" }];
 eq("a deletion travels", mergeInto(newer, tomb)[0].deleted, true);
 eq("and an old backup cannot undo it", mergeInto(tomb, older)[0].deleted, true);
 
+/* ── coordinates ── */
+
+group("coordinates");
+eq("a plain latitude", app.cleanCoordinate("55.7446675", 90), "55.7446675");
+eq("precision is kept exactly, not rounded through a float", app.cleanCoordinate("55.74466750", 90), "55.74466750");
+eq("a longitude", app.cleanCoordinate("37.5658937", 180), "37.5658937");
+eq("Excel handing it over as a number", app.cleanCoordinate(37.5658937, 180), "37.5658937");
+eq("a negative stays negative", app.cleanCoordinate("-0.1276", 180), "-0.1276");
+eq("degrees and a hemisphere are dropped", app.cleanCoordinate("55.7446675° N", 90), "55.7446675");
+eq("south is negative", app.cleanCoordinate("33.9249 S", 90), "-33.9249");
+eq("west is negative", app.cleanCoordinate("118.2437 W", 180), "-118.2437");
+eq("a latitude past the pole is not a latitude", app.cleanCoordinate("137.5", 90), null);
+eq("but that value is a fine longitude", app.cleanCoordinate("137.5", 180), "137.5");
+eq("past the antimeridian is not", app.cleanCoordinate("181.2", 180), null);
+eq("words are not coordinates", app.cleanCoordinate("tbc", 90), null);
+eq("nor is an empty cell", app.cleanCoordinate("", 90), null);
+eq("nor a stray dash", app.cleanCoordinate("-", 90), null);
+
 /* ── translating to and from Postgres ── */
 
 group("server shapes");
@@ -248,6 +279,7 @@ var storeHere = {
   storeId: "S001", storeName: "Oxford Street", storeManager: "A Patel",
   storeChannel: "Retail", country: "GB", status: "active",
   openDate: "2019-04-01", closeDate: "", salesArea: 240.5,
+  address: "1 Oxford Street", latitude: "51.5152300", longitude: "-0.1419300",
   updatedAt: "2026-03-01T09:00:00.000Z"
 };
 var storeThere = app.storeToRemote(storeHere);
@@ -256,6 +288,9 @@ eq("name", storeThere.store_name, "Oxford Street");
 eq("channel", storeThere.store_channel, "Retail");
 eq("an empty date becomes null, not an empty string", storeThere.close_date, null);
 eq("sales area is a number", storeThere.sales_area, 240.5);
+eq("the address goes up", storeThere.address, "1 Oxford Street");
+eq("latitude stays text, so its precision survives", storeThere.latitude, "51.5152300");
+eq("longitude too", storeThere.longitude, "-0.1419300");
 eq("not deleted", storeThere.deleted, false);
 
 // store_name is NOT NULL, and a tombstone has no name to give it.
@@ -268,6 +303,8 @@ var storeBack = app.storeFromRemote(storeThere);
 eq("store round-trips: id", storeBack.storeId, "S001");
 eq("store round-trips: manager", storeBack.storeManager, "A Patel");
 eq("store round-trips: area", storeBack.salesArea, 240.5);
+eq("store round-trips: latitude, still as text", storeBack.latitude, "51.5152300");
+eq("store round-trips: address", storeBack.address, "1 Oxford Street");
 eq("a null column comes back absent, not null", "closeDate" in storeBack, false);
 eq("a deleted row comes back as a tombstone", app.storeFromRemote({ store_id: "S009", deleted: true, updated_at: "2026-03-01T09:00:00Z" }).deleted, true);
 

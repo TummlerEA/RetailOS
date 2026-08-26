@@ -396,6 +396,30 @@ function run() {
       eq("the edit is saved", stores.filter(function (s) { return s.storeId === "S001"; })[0].storeManager, "J. Okonkwo");
     })
 
+    /* ── address and coordinates ── */
+    .then(function () {
+      console.log("location");
+      return page.click('#store-list .card:has-text("S003")');
+    })
+    .then(function () { return page.fill("#f-address", "12 Tverskaya St"); })
+    .then(function () { return page.fill("#f-latitude", "55.7446675"); })
+    .then(function () { return page.fill("#f-longitude", "37.5658937"); })
+    .then(function () { return page.click('#store-form button[type="submit"]'); })
+    .then(function () { return page.waitForTimeout(100); })
+    .then(function () { return stored(page, "retailos-stores"); })
+    .then(function (stores) {
+      var s3 = stores.filter(function (s) { return s.storeId === "S003"; })[0];
+      eq("the address is saved", s3.address, "12 Tverskaya St");
+      eq("latitude keeps every digit typed", s3.latitude, "55.7446675");
+      eq("longitude too", s3.longitude, "37.5658937");
+    })
+    .then(function () { return page.click('#store-list .card:has-text("S003")'); })
+    .then(function () { return page.locator("#f-latitude").inputValue(); })
+    .then(function (value) {
+      eq("and comes back into the form unchanged", value, "55.7446675");
+      return page.click("#btn-cancel-store");
+    })
+
     /* ── the CSV meant for Power BI ── */
     .then(function () {
       console.log("export");
@@ -422,6 +446,27 @@ function run() {
       ok("a row per store-month", !!march, lines.slice(0, 3).join(" | "));
       ok("with the month as a first-of-month date", /2026-03-01/.test(march), march);
       ok("and conversion as a decimal, not a percentage", /,0\.14,/.test(march), march);
+    })
+    .then(function () {
+      return page.evaluate(function () {
+        return new Promise(function (resolve) {
+          var realCreate = URL.createObjectURL;
+          URL.createObjectURL = function (blob) {
+            blob.text().then(resolve);
+            URL.createObjectURL = realCreate;
+            return "blob:captured";
+          };
+          document.getElementById("btn-export-stores").click();
+        });
+      });
+    })
+    .then(function (csv) {
+      var lines = csv.replace(/^\ufeff/, "").trim().split("\r\n");
+      var header = lines[0].split(",");
+      ok("the stores CSV carries the address", header.indexOf("address") >= 0, lines[0]);
+      ok("and the coordinates, for a map visual", header.indexOf("latitude") >= 0 && header.indexOf("longitude") >= 0, lines[0]);
+      var row = lines.filter(function (l) { return /^S003,/.test(l); })[0];
+      ok("with the coordinate unrounded", /55\.7446675/.test(row), row);
     })
 
     /* ── it is still there after a reload ── */

@@ -27,6 +27,15 @@ begin
   if not exists (select 1 from pg_views where schemaname = 'public' and viewname = 'targets_report')
     then problems := problems || 'the targets_report view is missing — Power BI reads that one'::text; end if;
 
+  -- A missing column stops the run rather than joining the list: the probes
+  -- below cannot even parse without it, and their error says far less than
+  -- naming the fix does.
+  if (select count(*) from information_schema.columns
+      where table_schema = 'public' and table_name = 'stores'
+        and column_name in ('address','latitude','longitude')) <> 3 then
+    raise exception E'\n  - the address, latitude or longitude column is missing. Re-run schema.sql: it adds them to an existing database without touching the data.';
+  end if;
+
   /* ── row-level security is the thing protecting the data ── */
 
   if exists (select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -71,14 +80,24 @@ begin
   begin insert into public.targets(store_id,month,sales) values ('VFY3','2026-04-01',-5);
     problems := problems || 'a negative target is accepted'::text; exception when check_violation then null; end;
 
+  begin insert into public.stores(store_id,store_name,latitude) values ('VFY4','probe','137.5');
+    problems := problems || 'a latitude past the pole is accepted'::text; exception when check_violation then null; end;
+
+  begin insert into public.stores(store_id,store_name,longitude) values ('VFY5','probe','181.2');
+    problems := problems || 'a longitude past the antimeridian is accepted'::text; exception when check_violation then null; end;
+
+  begin insert into public.stores(store_id,store_name,latitude) values ('VFY6','probe','55.7446675 N');
+    problems := problems || 'an unparsed coordinate is accepted — Power BI cannot map it'::text;
+    exception when check_violation then null; end;
+
   /* ── what the app actually does, as the role it does it as ──
      Grants and policies are different checks: a role can hold the grant and
      still be refused by the policy. This runs the real thing.  */
 
   set local role authenticated;
 
-  insert into public.stores(store_id,store_name,store_channel,status,updated_at,deleted)
-  values ('VFY9','policy probe','Retail','active','2026-03-01T09:00:00Z',false)
+  insert into public.stores(store_id,store_name,store_channel,status,address,latitude,longitude,updated_at,deleted)
+  values ('VFY9','policy probe','Retail','active','12 Tverskaya St','55.7446675','37.5658937','2026-03-01T09:00:00Z',false)
   on conflict (store_id) do update set store_name = excluded.store_name;
 
   insert into public.targets(store_id,month,sales,traffic,conversion,upt,asp,sot,updated_at,deleted)
@@ -100,6 +119,10 @@ begin
   select implied_sales into amount from public.targets_report where store_id = 'VFY9';
   if amount is null or abs(amount - 182574) > 1
     then problems := problems || 'the view is not computing implied sales correctly'::text; end if;
+
+  if not exists (select 1 from public.targets_report
+                 where store_id = 'VFY9' and latitude = '55.7446675' and address = '12 Tverskaya St')
+    then problems := problems || 'the view is not carrying the address and coordinates through'::text; end if;
 
   reset role;
 
