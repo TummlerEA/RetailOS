@@ -205,8 +205,10 @@ The sync tests stub Supabase at `window.fetch` — the exact seam the app
 talks through — so the merge, the choice of what to push, the shape of every
 row and the error messages are all the real code, without writing to live
 data. What a stub cannot check is that those rows satisfy the real schema,
-so the column names and a full upsert round-trip were verified against the
-actual database separately.
+so `supabase/verify.sql` does that half: paste it into the Supabase SQL
+Editor and it checks the tables, the policies, that the anonymous role
+reaches nothing, and that a signed-in user can write and read back — writing
+nothing it does not delete again.
 
 ## Releasing
 

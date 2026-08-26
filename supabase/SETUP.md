@@ -28,8 +28,18 @@ Left sidebar → **SQL Editor** → **New query**. Paste the whole of
 You should see `Success. No rows returned`. It is safe to run again if you
 are not sure it worked.
 
-Check it: left sidebar → **Table Editor**. You should see `stores` and
-`targets`, both empty, each marked **RLS enabled**.
+### Check it worked
+
+Left sidebar → **Table Editor**: `stores` and `targets` should both be
+there, empty, each marked **RLS enabled**.
+
+Then paste [`verify.sql`](verify.sql) into a new query and Run that too. It
+goes further than looking: it checks the tables and the view, that row-level
+security is on, that the anonymous role cannot read anything, and that a
+signed-in user really can write and read back — then deletes everything it
+wrote. A good run ends `All checks passed.`; a bad one lists what is wrong.
+
+Worth re-running after any change to a policy, or if sync starts misbehaving.
 
 ## 3. Stop strangers signing themselves up
 
