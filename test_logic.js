@@ -305,6 +305,51 @@ near("the file's own arithmetic holds", app.impliedSales(first), 15112500);
 eq("so nothing is flagged as inconsistent",
    app.checksFor(first).filter(function (c) { return c.off; }).length, 0);
 
+/* ── Russian headers, as a fallback behind the English ones ── */
+
+group("Cyrillic headers");
+var ruTargets = [
+  ["Месяц", "Код магазина", "Наименование", "Продажи", "Трафик", "Конверсия", "УПТ", "Средняя цена", "СОТ"],
+  ["01.08.2026", "0Ц-000018", "JNS МОС Авиапарк", "15112500", "10000", "0.075", "1.55", "13000", " 1,511 "]
+];
+var ruLayout = app.detectLayout(ruTargets, null);
+eq("a wholly Russian header row reads as targets", ruLayout.kind, "targets-long");
+eq("and nothing in it is ignored", ruLayout.ignored.length, 0);
+var ruRow = app.buildTargetRows(ruTargets, ruLayout, null, null, { "0Ц-000018": true }).items[0].row;
+eq("Месяц is the month", ruRow.month, "2026-08");
+near("Продажи is sales", ruRow.sales, 15112500);
+near("Трафик is traffic", ruRow.traffic, 10000);
+near("Конверсия is conversion", ruRow.conversion, 0.075);
+near("УПТ is UPT", ruRow.upt, 1.55);
+near("Средняя цена is ASP", ruRow.asp, 13000);
+near("СОТ is SOT", ruRow.sot, 1511);
+
+// ATV, not ASP: средний чек is ASP x UPT. Mapping it would put a number
+// half again too big into the column and the checks would flag the row.
+eq("средний чек is left alone rather than taken for ASP",
+   app.detectLayout([["Месяц", "Код магазина", "Средний чек"], ["01.08.2026", "S1", "500"]], null).ignored.length, 1);
+
+var ruStores = [
+  ["Код магазина", "Наименование", "Бренд", "Канал", "Управляющий", "Адрес", "Широта", "Долгота", "Статус", "Площадь"],
+  ["0Ц-000018", "JNS МОС Авиапарк", "Найк", "Розница", "И. Петров", "Ходынский б-р, 4", "55.7446675", "37.5658937", "Действующий", "320"]
+];
+var ruStoreLayout = app.detectLayout(ruStores, null);
+eq("a Russian store sheet is recognised", ruStoreLayout.kind, "stores");
+eq("with every column understood", ruStoreLayout.ignored.length, 0);
+var ruStore = app.buildStoreRows(ruStores, ruStoreLayout)[0].row;
+eq("the ID", ruStore.storeId, "0Ц-000018");
+eq("the name is kept in its own alphabet", ruStore.storeName, "JNS МОС Авиапарк");
+eq("Найк becomes the brand we store", ruStore.storeBrand, "Nike");
+eq("Розница becomes the channel we store", ruStore.storeChannel, "Retail");
+eq("Действующий becomes active", ruStore.status, "active");
+eq("Широта is latitude", ruStore.latitude, "55.7446675");
+eq("Адрес is the address", ruStore.address, "Ходынский б-р, 4");
+near("Площадь is the sales area", ruStore.salesArea, 320);
+
+// The English spellings must still win where both could apply.
+eq("English headers are untouched by any of this",
+   app.detectLayout([["month", "store_id", "sales"], ["01.08.2026", "S1", "1"]], null).kind, "targets-long");
+
 /* ── brands ── */
 
 group("brands");

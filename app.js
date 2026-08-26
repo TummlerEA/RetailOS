@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 5;
+  var VERSION = 6;
 
   var K = {
     stores:   "retailos-stores",
@@ -1191,43 +1191,81 @@
    * no-op the second time rather than a pile of duplicates.
    */
 
+  // Each field's synonyms are the headers seen in the wild, English first
+  // and Russian after it. Nothing here is a guess about what a column
+  // means: an unrecognised header is reported as ignored rather than
+  // matched approximately.
   var STORE_FIELDS = [
     { key: "storeId",      label: "Store ID",   required: true,
-      syn: ["storeid", "store", "storeno", "storenumber", "storecode", "shopid", "shopno", "id", "code", "branch", "branchid", "branchno"] },
+      syn: ["storeid", "store", "storeno", "storenumber", "storecode", "shopid", "shopno", "id", "code", "branch", "branchid", "branchno",
+            "кодмагазина", "код", "идмагазина", "номермагазина", "кодтт", "идтт"] },
     { key: "storeName",    label: "Name",
-      syn: ["storename", "name", "shopname", "branchname", "description", "location", "sitename"] },
+      syn: ["storename", "name", "shopname", "branchname", "description", "location", "sitename",
+            "магазин", "названиемагазина", "наименование", "наименованиемагазина", "названиеточки", "торговаяточка", "тт"] },
     { key: "storeManager", label: "Manager",
-      syn: ["storemanager", "manager", "storemgr", "mgr", "managername", "sm"] },
+      syn: ["storemanager", "manager", "storemgr", "mgr", "managername", "sm",
+            "менеджер", "управляющий", "директормагазина", "директор", "руководитель", "управляющиймагазином"] },
     { key: "storeChannel", label: "Channel",
-      syn: ["storechannel", "channel", "storetype", "type", "format", "storeformat", "concept"] },
+      syn: ["storechannel", "channel", "storetype", "type", "format", "storeformat", "concept",
+            "канал", "каналпродаж", "типмагазина", "формат", "форматмагазина"] },
     { key: "storeBrand",   label: "Brand",
-      syn: ["storebrand", "brand", "fascia", "banner", "marque", "brandname", "label"] },
-    { key: "country",      label: "Country",   syn: ["country", "market", "countrycode"] },
-    { key: "status",       label: "Status",    syn: ["status", "state", "active"] },
-    { key: "openDate",     label: "Opened",    syn: ["opendate", "opened", "openingdate", "dateopened"] },
-    { key: "closeDate",    label: "Closed",    syn: ["closedate", "closed", "closingdate", "dateclosed"] },
-    { key: "salesArea",    label: "Sales area", syn: ["salesarea", "area", "sqm", "m2", "sellingarea", "sellingspace", "size", "squaremetres", "squaremeters"] },
-    { key: "address",      label: "Address",   syn: ["address", "streetaddress", "street", "addressline1", "addr", "postaladdress", "fulladdress", "location"] },
-    { key: "latitude",     label: "Latitude",  syn: ["latitude", "lat", "y", "geolat", "storelatitude"] },
-    { key: "longitude",    label: "Longitude", syn: ["longitude", "long", "lng", "lon", "x", "geolong", "storelongitude"] }
+      syn: ["storebrand", "brand", "fascia", "banner", "marque", "brandname", "label",
+            "бренд", "марка", "вывеска", "торговаямарка", "брендмагазина"] },
+    { key: "country",      label: "Country",
+      syn: ["country", "market", "countrycode", "страна", "рынок"] },
+    { key: "status",       label: "Status",
+      syn: ["status", "state", "active", "статус", "состояние"] },
+    { key: "openDate",     label: "Opened",
+      syn: ["opendate", "opened", "openingdate", "dateopened", "датаоткрытия", "открытие"] },
+    { key: "closeDate",    label: "Closed",
+      syn: ["closedate", "closed", "closingdate", "dateclosed", "датазакрытия", "закрытие"] },
+    { key: "salesArea",    label: "Sales area",
+      syn: ["salesarea", "area", "sqm", "m2", "sellingarea", "sellingspace", "size", "squaremetres", "squaremeters",
+            "площадь", "торговаяплощадь", "площадьторговая", "квм", "м2", "площадьмагазина"] },
+    { key: "address",      label: "Address",
+      syn: ["address", "streetaddress", "street", "addressline1", "addr", "postaladdress", "fulladdress", "location",
+            "адрес", "адресмагазина", "фактическийадрес", "улица"] },
+    { key: "latitude",     label: "Latitude",
+      syn: ["latitude", "lat", "y", "geolat", "storelatitude", "широта"] },
+    { key: "longitude",    label: "Longitude",
+      syn: ["longitude", "long", "lng", "lon", "x", "geolong", "storelongitude", "долгота"] }
   ];
 
   var METRIC_SYN = {
-    sales:      ["salestarget", "sales", "salestgt", "targetsales", "turnover", "revenue", "netsales", "netsalestarget", "value", "salesvalue"],
+    sales:      ["salestarget", "sales", "salestgt", "targetsales", "turnover", "revenue", "netsales", "netsalestarget", "value", "salesvalue",
+                 "продажи", "продажа", "выручка", "оборот", "товарооборот", "суммапродаж", "планпродаж", "продажиплан", "объемпродаж"],
     traffic:    ["traffictarget", "traffic", "footfall", "footfalltarget", "visitors", "entries", "counter", "trafficgoal",
-                 "trafic", "traffik", "trafik", "traffictgt", "footfal", "traficktarget", "trafictarget"],
-    conversion: ["conversiontarget", "conversion", "conv", "convrate", "conversionrate", "cr", "convtarget", "cvr"],
-    upt:        ["upttarget", "upt", "unitspertransaction", "unitspertxn", "ipt", "itemspertransaction", "uptgoal"],
-    asp:        ["asptarget", "asp", "averagesellingprice", "avgsellingprice", "avgprice", "averageprice", "aur", "asptgt"],
-    sot:        ["sottarget", "sot", "sottgt", "sotgoal"]
+                 "trafic", "traffik", "trafik", "traffictgt", "footfal", "traficktarget", "trafictarget",
+                 "трафик", "трафикплан", "посетители", "посещаемость", "поток", "входящийпоток", "количествопосетителей", "проходимость"],
+    conversion: ["conversiontarget", "conversion", "conv", "convrate", "conversionrate", "cr", "convtarget", "cvr",
+                 "конверсия", "конверсияплан", "коэффициентконверсии", "конверсиямагазина"],
+    upt:        ["upttarget", "upt", "unitspertransaction", "unitspertxn", "ipt", "itemspertransaction", "uptgoal",
+                 "упт", "штуквчеке", "единицвчеке", "количествовчеке", "товароввчеке", "глубиначека"],
+    // Deliberately not "средний чек": that is the average transaction
+    // value, which is ASP x UPT, not ASP. Mapping it here would drop a
+    // number about half again too big into a column the checks then flag.
+    asp:        ["asptarget", "asp", "averagesellingprice", "avgsellingprice", "avgprice", "averageprice", "aur", "asptgt",
+                 "средняяцена", "средняяценатовара", "ценазаединицу", "средняяценапродажи", "среднаяцена"],
+    sot:        ["sottarget", "sot", "sottgt", "sotgoal",
+                 "сот", "продажинапосетителя", "выручканапосетителя", "доходнапосетителя"]
   };
 
-  var MONTH_SYN = ["month", "period", "yearmonth", "ym", "date", "monthkey", "calendarmonth", "per"];
-  var METRIC_COL_SYN = ["metric", "kpi", "measure", "target", "targettype", "indicator"];
+  var MONTH_SYN = ["month", "period", "yearmonth", "ym", "date", "monthkey", "calendarmonth", "per",
+                   "месяц", "период", "дата", "месяцгод", "отчетныйпериод", "напериод"];
+  var METRIC_COL_SYN = ["metric", "kpi", "measure", "target", "targettype", "indicator",
+                        "показатель", "метрика", "измерение", "планпоказатель"];
 
+  // Strips a header down to letters and digits so that spacing, case and
+  // punctuation stop mattering. Letters means letters in any script: the
+  // old version kept only a-z, which quietly reduced every Cyrillic header
+  // to an empty string — and, since the store search runs through here too,
+  // made searching by a Russian store name match everything rather than
+  // filtering.
   function normHeader(text) {
     return String(text === null || text === undefined ? "" : text)
-      .toLowerCase().replace(/[^a-z0-9]/g, "");
+      .toLowerCase()
+      .replace(/\u00b2/g, "2")
+      .replace(/[^\p{L}\p{N}]/gu, "");
   }
 
   function matchField(header, fields) {
@@ -1353,7 +1391,10 @@
     var aliases = { ua: "Under Armour", underarmor: "Under Armour", underarmour: "Under Armour",
                     levi: "Levis", levistrauss: "Levis",
                     multibrand: "Multi", mixed: "Multi", multibrandstore: "Multi",
-                    nikestore: "Nike", asicsstore: "Asics" };
+                    nikestore: "Nike", asicsstore: "Asics",
+                    "мульти": "Multi", "мультибренд": "Multi", "мультибрендовый": "Multi",
+                    "найк": "Nike", "асикс": "Asics", "левайс": "Levis", "левис": "Levis",
+                    "андерармор": "Under Armour", "андерармур": "Under Armour" };
     return aliases[norm] || "";
   }
 
@@ -1367,7 +1408,13 @@
                     shopinshop: "Concession", sis: "Concession", franchisee: "Franchise",
                     ecom: "Ecommerce", online: "Ecommerce", web: "Ecommerce", digital: "Ecommerce",
                     popup: "Pop-up", temporary: "Pop-up", fullprice: "Retail", own: "Retail",
-                    doors: "Retail", flagship: "Retail" };
+                    doors: "Retail", flagship: "Retail",
+                    "розница": "Retail", "розничный": "Retail", "собственный": "Retail", "флагман": "Retail",
+                    "аутлет": "Outlet", "сток": "Outlet", "дисконт": "Outlet",
+                    "концессия": "Concession", "островок": "Concession", "остров": "Concession", "шопвшопе": "Concession",
+                    "франшиза": "Franchise", "франчайзинг": "Franchise", "франчайзи": "Franchise",
+                    "интернетмагазин": "Ecommerce", "онлайн": "Ecommerce", "электроннаяторговля": "Ecommerce",
+                    "попап": "Pop-up", "временный": "Pop-up", "временныймагазин": "Pop-up" };
     return aliases[norm] || "";
   }
 
@@ -1435,9 +1482,12 @@
   function normaliseStatus(raw) {
     var norm = normHeader(raw);
     if (!norm) return "";
-    if (["active", "open", "trading", "yes", "y", "true", "1"].indexOf(norm) >= 0) return "active";
-    if (["closed", "shut", "no", "n", "false", "0"].indexOf(norm) >= 0) return "closed";
-    if (["pipeline", "planned", "future", "notopenyet"].indexOf(norm) >= 0) return "pipeline";
+    if (["active", "open", "trading", "yes", "y", "true", "1",
+         "активный", "активен", "действующий", "работает", "открыт", "да"].indexOf(norm) >= 0) return "active";
+    if (["closed", "shut", "no", "n", "false", "0",
+         "закрыт", "закрытый", "закрыто", "нет"].indexOf(norm) >= 0) return "closed";
+    if (["pipeline", "planned", "future", "notopenyet",
+         "план", "впланах", "планируется", "будущий", "воткрытии"].indexOf(norm) >= 0) return "pipeline";
     return "";
   }
 

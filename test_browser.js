@@ -473,6 +473,15 @@ function run() {
       eq("the brand is saved", s2.storeBrand, "Under Armour");
       ok("and the channel survived it", !!s2.storeChannel && s2.storeChannel !== "Under Armour", s2.storeChannel);
     })
+    // The search box normalises through the same function the headers use,
+    // so this is the other half of the Cyrillic fix: before it, a Russian
+    // query reduced to an empty string and matched every store.
+    .then(function () { return page.fill("#store-search", "Авиапарк"); })
+    .then(function () { return page.locator("#store-list .card").count(); })
+    .then(function (count) {
+      eq("searching by a Russian store name filters rather than matching all", count, 1);
+      return page.fill("#store-search", "");
+    })
     .then(function () { return page.fill("#store-search", "Under Armour"); })
     .then(function () { return page.locator("#store-list .card").count(); })
     .then(function (count) {

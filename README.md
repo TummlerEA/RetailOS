@@ -28,7 +28,12 @@ Everything is on one screen's worth of tabs: **Stores**, **Targets**,
   arrive in are understood: one row per store-month, and months across the
   top. Dates are read day-first — `01.08.2026`, `01/08/2026` and `2026-08-01`
   all mean August 2026 — and headers are matched loosely enough that a
-  misspelt `trafic` still lands on Traffic. Nothing is written until a preview has shown exactly what would
+  misspelt `trafic` still lands on Traffic. Russian headers work as a
+  fallback behind the English ones — `Продажи`, `Трафик`, `Конверсия`,
+  `Код магазина`, `Бренд`, `Широта` — and so do the values inside them, so
+  `Розница` becomes Retail and `Действующий` becomes active. `Средний чек`
+  is deliberately not treated as ASP: it is the average transaction value,
+  which is ASP x UPT. Nothing is written until a preview has shown exactly what would
   change.
 - **Export.** A JSON backup, and two flat CSVs shaped for Power BI.
 - **Sync.** Sign in and the same data is on the laptop, the phone and in
