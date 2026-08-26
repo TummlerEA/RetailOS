@@ -181,8 +181,29 @@ system of record for the things the POS does not know.
 ## Running it
 
 Open `index.html`. That is all — there is no server, no `npm install`, no
-build. To put it in front of other people, GitHub Pages serves this
-repository as it stands.
+build.
+
+One caveat: opened straight off the disk the page has a `file://` origin,
+which some browsers refuse to let call out to Supabase. Everything except
+sync works; to try sync locally, serve the folder instead —
+
+```
+python3 -m http.server 8000     # then open http://localhost:8000
+```
+
+## Putting it in front of people
+
+GitHub Pages serves this repository as it stands. **Settings** → **Pages** →
+Source **Deploy from a branch**, the default branch, folder **/ (root)**.
+A minute later it is at `https://<user>.github.io/RetailOS/`, which is also
+the URL to open on a phone — Safari's **Share** → **Add to Home Screen**
+gives it an icon and its own window.
+
+The repository is public, so `config.js` and the publishable key in it are
+readable by anyone. That is how the key is meant to work. What stops a
+stranger reading your targets is that every table needs a signed-in user and
+self-signup is turned off, both of which `supabase/verify.sql` checks. The
+secret key is the one that must never be committed, and is not.
 
 ## Tests
 
