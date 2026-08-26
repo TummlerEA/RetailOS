@@ -22,6 +22,9 @@ Everything is on one screen's worth of tabs: **Stores**, **Targets**,
   top. Nothing is written until a preview has shown exactly what would
   change.
 - **Export.** A JSON backup, and two flat CSVs shaped for Power BI.
+- **Sync.** Sign in and the same data is on the laptop, the phone and in
+  Postgres for Power BI to read. Signed out it still works exactly as
+  before, on that device only.
 
 ## The six targets are not six independent numbers
 
@@ -103,36 +106,65 @@ and paste routes, which reach the same place.
 
 ## Where the data lives
 
-In this browser's `localStorage`, and nowhere else. Which means two things
-worth being blunt about:
+In this browser's `localStorage` always, and in Supabase as well once
+someone signs in.
 
-- **There is one copy.** Clearing site data, or changing laptop, destroys
-  it. Export a JSON backup.
+Signed out, there is exactly one copy and two things are worth being blunt
+about:
+
+- **Clearing site data, or changing laptop, destroys it.** Export a JSON
+  backup.
 - **Safari deletes it.** Under Intelligent Tracking Prevention, storage a
   script wrote is evicted after about seven days without a visit. An iPad
-  used once a week can come back empty. This is the strongest argument for
-  the server below arriving sooner rather than later.
+  used once a week can come back empty.
+
+Signing in is what fixes both, and it is the reason to do it early.
 
 Restoring a backup **merges** rather than replaces. Every record carries
 `updatedAt`, and deleting leaves a tombstone rather than dropping the row,
 so the newer version of each record wins whichever order two files are
 applied in — and an out-of-date backup cannot resurrect something deleted
 or undo a newer edit. That is what makes passing a JSON file between two
-machines work today, and it is the merge rule real sync will use tomorrow.
+machines work today, and it is the same rule sync uses.
+
+## Sync
+
+The app stays local-first. Every screen still reads and writes the browser
+copy synchronously, so the phone keeps working with no signal and none of
+the screen code had to change. Sync is a separate errand that runs on
+opening the app, a second and a half after any edit, and whenever **Sync
+now** is pressed:
+
+1. Pull every row from `stores` and `targets`.
+2. Merge them in by the last-write-wins rule above.
+3. Push back whatever turned out to be newer here.
+
+Because the merge is order-independent, it does not matter which device
+syncs first or how long one of them was offline. Stores are pushed before
+targets, since a target row cannot reference a store the server has not been
+told about.
+
+The browser talks to PostgREST directly over `fetch` — no SDK, no bundle,
+and one fewer dependency to keep patched. Sign-in is Supabase Auth; the
+access token lives in `localStorage` and is refreshed automatically when it
+expires. `config.js` holds the project URL and the publishable key, both of
+which are public by design: what protects the data is row-level security
+plus self-signup being turned off, not the key. The secret key must never
+appear in any file the browser can read.
+
+`supabase/SETUP.md` walks through creating the project; `supabase/schema.sql`
+is the whole database.
 
 ## Where it is going
 
-1. **Now** — offline, one browser, Excel in, CSV and JSON out.
-2. **Next** — sync between the three to five people at HQ who use it, through
-   the private `retailos-private` repository holding one JSON file, written
-   via the GitHub Contents API. Same merge rule as the backup restore.
-   Power BI reads that file with the Web connector.
-3. **Then** — Supabase. Postgres, so Power BI connects natively; PostgREST,
-   so the browser talks to it with no server code of ours to write; and
-   real logins for when store managers get access.
-
-Every read and write already goes through the `Data` adapter, so step 3 is a
-change in one region of `app.js` rather than everywhere.
+1. **Done** — offline, one browser, Excel in, CSV and JSON out.
+2. **Done** — Supabase behind it: Postgres so Power BI connects natively,
+   PostgREST so there is no server code of ours to write, and real logins.
+3. **Next** — Power BI reading the `targets_report` view directly, so the
+   CSV export stops being the route into the report.
+4. **Later** — actuals joined alongside targets; store-manager logins with
+   row-level security narrowed to their own store; a strategic-target module
+   separate from these operational ones.
 
 ### The CSVs are shaped for Power BI
 
@@ -169,11 +201,18 @@ rather than text, conversion in percentage points, the data on the second
 sheet behind a cover note, a store that does not exist, and a cell someone
 typed `tbc` into.
 
+The sync tests stub Supabase at `window.fetch` — the exact seam the app
+talks through — so the merge, the choice of what to push, the shape of every
+row and the error messages are all the real code, without writing to live
+data. What a stub cannot check is that those rows satisfy the real schema,
+so the column names and a full upsert round-trip were verified against the
+actual database separately.
+
 ## Releasing
 
-Bump the `?v=` on both assets in `index.html`, `VERSION` in `app.js` and
+Bump the `?v=` on each asset in `index.html`, `VERSION` in `app.js` and
 `version.json` to the same number, in one commit. The `?v=` is what makes
-browsers fetch the new files. `test_version.js` fails if any of the four
+browsers fetch the new files. `test_version.js` fails if any of them
 disagree.
 
 ## Known limits
@@ -187,5 +226,11 @@ disagree.
 - Targets are overwritten, not versioned — they are operational targets set
   at the end of each month and not revised. Strategic targets are a separate
   module, not built.
+- Sync is whole-table: every row is pulled on each sync. At thirty stores
+  and a few years of months that is a few hundred rows, so it is not worth
+  the complexity of tracking a high-water mark until it is.
+- Two people editing the same cell in the same minute is resolved by the
+  clock, and a device with a badly wrong clock will win arguments it should
+  not.
 - A store's manager is a plain column, not a dated assignment, so it answers
   "who runs this store" and not "who ran it in March".

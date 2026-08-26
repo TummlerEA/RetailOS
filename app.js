@@ -14,13 +14,14 @@
 (function () {
   "use strict";
 
-  var VERSION = 1;
+  var VERSION = 2;
 
   var K = {
     stores:   "retailos-stores",
     targets:  "retailos-targets",
     settings: "retailos-settings",
-    mapping:  "retailos-import-mapping"
+    mapping:  "retailos-import-mapping",
+    session:  "retailos-session"
   };
 
   var CHANNELS = ["Retail", "Outlet", "Concession", "Franchise", "Ecommerce", "Pop-up"];
@@ -297,6 +298,11 @@
     putTargets: function (list) { return writeJson(K.targets, list); }
   };
 
+  // Every local write returns through here, so there is one place that
+  // knows a change also has to reach the server. When nobody is signed in
+  // it does nothing, which is the whole of the offline story.
+  function saved(ok) { Sync.schedule(); return ok; }
+
   var Data = {
     adapter: LocalAdapter,
 
@@ -325,7 +331,7 @@
         if (all[i] && all[i].storeId === next.storeId) { all[i] = next; found = true; break; }
       }
       if (!found) all.push(next);
-      return Data.adapter.putStores(all);
+      return saved(Data.adapter.putStores(all));
     },
 
     // A tombstone keeps only what is needed to propagate the deletion.
@@ -336,7 +342,7 @@
           all[i] = { storeId: id, deleted: true, updatedAt: nowIso() };
         }
       }
-      return Data.adapter.putStores(all);
+      return saved(Data.adapter.putStores(all));
     },
 
     /* ── targets ── */
@@ -380,7 +386,7 @@
       else delete record.deleted;
 
       if (index >= 0) all[index] = record; else all.push(record);
-      return Data.adapter.putTargets(all);
+      return saved(Data.adapter.putTargets(all));
     },
 
     // Bulk upsert used by import. Each incoming row is { storeId, month, ...metrics }
@@ -407,7 +413,7 @@
         else { byKey[key] = all.length; all.push(record); }
       });
 
-      return Data.adapter.putTargets(all);
+      return saved(Data.adapter.putTargets(all));
     },
 
     upsertStores: function (rows) {
@@ -430,7 +436,7 @@
         else { byId[row.storeId] = all.length; all.push(record); }
       });
 
-      return Data.adapter.putStores(all);
+      return saved(Data.adapter.putStores(all));
     },
 
     /* ── months in use ── */
@@ -480,6 +486,7 @@
 
       result.stores = mergeById(Data.adapter.stores(), doc.stores, "storeId", Data.adapter.putStores);
       result.targets = mergeById(Data.adapter.targets(), doc.targets, "id", Data.adapter.putTargets);
+      Sync.schedule();
       return result;
     }
   };
@@ -508,6 +515,325 @@
     put(mine);
     return changed;
   }
+
+  /* ═══════════════════ the server ═══════════════════
+   *
+   * The app stays local-first. Every screen still reads and writes the
+   * browser copy synchronously, exactly as it did before this existed, so
+   * nothing above had to be rewritten and the phone keeps working with no
+   * signal.
+   *
+   * Sync is a separate, occasional errand: pull what the server has, merge
+   * it in by the same last-write-wins rule two backup files use, then push
+   * whatever turned out to be newer here. Because the merge is
+   * order-independent, it does not matter which device syncs first, or how
+   * long one of them was offline.
+   */
+
+  function isoOrNull(value) {
+    if (!value) return null;
+    var when = new Date(value);
+    return isNaN(when.getTime()) ? null : when.toISOString();
+  }
+
+  function blankToNull(value) {
+    return value === undefined || value === null || value === "" ? null : value;
+  }
+
+  function numberOrNull(value) {
+    if (value === undefined || value === null || value === "") return null;
+    var n = typeof value === "number" ? value : toNumber(value);
+    return n === null || n === undefined || isNaN(n) ? null : n;
+  }
+
+  /* ── translating between the two shapes ──
+   *
+   * The browser copy is camelCase with the month as "2026-03" and missing
+   * values simply absent. Postgres is snake_case with the month a real date
+   * and missing values null. Every column is sent on every push, nulls
+   * included: leaving a key out would mean "unchanged", and clearing a
+   * target has to travel too.
+   */
+
+  function storeToRemote(record) {
+    return {
+      store_id: record.storeId,
+      // A tombstone carries no name and the column cannot be empty. The ID
+      // is the honest stand-in.
+      store_name: blankToNull(record.storeName) || record.storeId,
+      store_manager: blankToNull(record.storeManager),
+      store_channel: blankToNull(record.storeChannel),
+      country: blankToNull(record.country),
+      status: blankToNull(record.status) || "active",
+      open_date: blankToNull(record.openDate),
+      close_date: blankToNull(record.closeDate),
+      sales_area: numberOrNull(record.salesArea),
+      updated_at: isoOrNull(record.updatedAt) || nowIso(),
+      deleted: !!record.deleted
+    };
+  }
+
+  function storeFromRemote(row) {
+    var record = { storeId: row.store_id, updatedAt: isoOrNull(row.updated_at) || nowIso() };
+    if (row.deleted) { record.deleted = true; return record; }
+    [["storeName", "store_name"], ["storeManager", "store_manager"],
+     ["storeChannel", "store_channel"], ["country", "country"], ["status", "status"],
+     ["openDate", "open_date"], ["closeDate", "close_date"]].forEach(function (pair) {
+      var value = row[pair[1]];
+      if (value !== null && value !== undefined && value !== "") record[pair[0]] = value;
+    });
+    if (row.sales_area !== null && row.sales_area !== undefined) record.salesArea = Number(row.sales_area);
+    return record;
+  }
+
+  function targetToRemote(record) {
+    var row = {
+      store_id: record.storeId,
+      month: record.month + "-01",
+      updated_at: isoOrNull(record.updatedAt) || nowIso(),
+      deleted: !!record.deleted
+    };
+    METRIC_KEYS.forEach(function (key) { row[key] = record.deleted ? null : numberOrNull(record[key]); });
+    return row;
+  }
+
+  function targetFromRemote(row) {
+    var month = String(row.month || "").slice(0, 7);
+    var record = {
+      id: Data.targetKey(row.store_id, month),
+      storeId: row.store_id,
+      month: month,
+      updatedAt: isoOrNull(row.updated_at) || nowIso()
+    };
+    if (row.deleted) { record.deleted = true; return record; }
+    METRIC_KEYS.forEach(function (key) {
+      if (row[key] !== null && row[key] !== undefined) record[key] = Number(row[key]);
+    });
+    return record;
+  }
+
+  // Rows this device holds a newer version of than the server does. Run
+  // after the pull has been merged in, so anything still newer here is
+  // genuinely a local change the server has not seen.
+  function newerHere(mine, theirs, idField) {
+    var seen = {};
+    theirs.forEach(function (row) {
+      if (row && row[idField]) seen[row[idField]] = String(row.updatedAt || "");
+    });
+    return mine.filter(function (row) {
+      if (!row || !row[idField]) return false;
+      var remote = seen[row[idField]];
+      return remote === undefined || String(row.updatedAt || "") > remote;
+    });
+  }
+
+  var Remote = {
+    config: function () {
+      var c = (typeof window !== "undefined" && window.RETAILOS_CONFIG) || {};
+      return c.supabaseUrl && c.supabasePublishableKey ? c : null;
+    },
+
+    configured: function () { return !!Remote.config(); },
+
+    session: function () {
+      var s = readJson(K.session, null);
+      return s && s.accessToken ? s : null;
+    },
+
+    setSession: function (session) {
+      if (!session) { try { localStorage.removeItem(K.session); } catch (e) { /* nothing useful to do */ } return true; }
+      return writeJson(K.session, session);
+    },
+
+    signedIn: function () { return !!Remote.session(); },
+
+    email: function () { var s = Remote.session(); return s ? s.email || "" : ""; },
+
+    // Both grants return the same shape, so signing in and refreshing an
+    // expired token are the same call with a different body.
+    token: function (grant, body) {
+      var c = Remote.config();
+      if (!c) return Promise.reject(new Error("No Supabase project is configured."));
+      return fetch(c.supabaseUrl + "/auth/v1/token?grant_type=" + grant, {
+        method: "POST",
+        headers: { apikey: c.supabasePublishableKey, "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      }).then(function (res) {
+        return res.text().then(function (text) {
+          var data = parseMaybeJson(text);
+          if (!res.ok) throw new Error(authMessage(res.status, data));
+          if (!data || !data.access_token) throw new Error("The server replied without a token.");
+          return {
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token || "",
+            email: (data.user && data.user.email) || (body.email || Remote.email()),
+            expiresAt: new Date(Date.now() + (Number(data.expires_in) || 3600) * 1000).toISOString()
+          };
+        });
+      });
+    },
+
+    signIn: function (email, password) {
+      return Remote.token("password", { email: email, password: password }).then(function (session) {
+        Remote.setSession(session);
+        return session;
+      });
+    },
+
+    refresh: function () {
+      var current = Remote.session();
+      if (!current || !current.refreshToken) return Promise.reject(new Error("Signed out. Sign in again."));
+      return Remote.token("refresh_token", { refresh_token: current.refreshToken }).then(function (session) {
+        Remote.setSession(session);
+        return session;
+      }, function (e) {
+        // A refresh token the server no longer honours means the session is
+        // over. Clearing it is what puts the sign-in form back.
+        Remote.setSession(null);
+        throw e;
+      });
+    },
+
+    signOut: function () {
+      var c = Remote.config();
+      var current = Remote.session();
+      Remote.setSession(null);
+      if (!c || !current) return Promise.resolve();
+      // Best effort: the local session is already gone either way.
+      return fetch(c.supabaseUrl + "/auth/v1/logout", {
+        method: "POST",
+        headers: { apikey: c.supabasePublishableKey, Authorization: "Bearer " + current.accessToken }
+      }).then(function () { return true; }, function () { return true; });
+    },
+
+    request: function (path, options, retried) {
+      var c = Remote.config();
+      var session = Remote.session();
+      if (!c) return Promise.reject(new Error("No Supabase project is configured."));
+      if (!session) return Promise.reject(new Error("Sign in first."));
+      var opts = options || {};
+
+      var headers = { apikey: c.supabasePublishableKey, Authorization: "Bearer " + session.accessToken, "Content-Type": "application/json" };
+      Object.keys(opts.headers || {}).forEach(function (k) { headers[k] = opts.headers[k]; });
+
+      return fetch(c.supabaseUrl + "/rest/v1/" + path, {
+        method: opts.method || "GET",
+        headers: headers,
+        body: opts.body
+      }).then(function (res) {
+        // An hour-old access token is the ordinary case, not an error.
+        if (res.status === 401 && !retried && session.refreshToken) {
+          return Remote.refresh().then(function () { return Remote.request(path, options, true); });
+        }
+        return res.text().then(function (text) {
+          var data = parseMaybeJson(text);
+          if (!res.ok) throw new Error(restMessage(res.status, data));
+          return data;
+        });
+      });
+    },
+
+    upsert: function (table, rows) {
+      var chunks = [];
+      for (var i = 0; i < rows.length; i += 400) chunks.push(rows.slice(i, i + 400));
+      return chunks.reduce(function (chain, chunk) {
+        return chain.then(function () {
+          return Remote.request(table, {
+            method: "POST",
+            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+            body: JSON.stringify(chunk)
+          });
+        });
+      }, Promise.resolve());
+    }
+  };
+
+  function parseMaybeJson(text) {
+    if (!text) return null;
+    try { return JSON.parse(text); } catch (e) { return { message: String(text).slice(0, 200) }; }
+  }
+
+  function authMessage(status, data) {
+    if (status === 400 || status === 401) return "That email and password did not match.";
+    if (status === 422) return "Enter an email address and a password.";
+    if (status === 429) return "Too many attempts. Wait a minute and try again.";
+    var said = data && (data.error_description || data.msg || data.message || data.error);
+    return said || ("Sign-in failed (" + status + ").");
+  }
+
+  function restMessage(status, data) {
+    var said = data && (data.message || data.hint || data.error);
+    if (status === 401 || status === 403) {
+      return "The server refused that. " + (said || "This account may not have access to the tables.");
+    }
+    if (said && data.details) return said + " — " + data.details;
+    return said || ("The server replied " + status + ".");
+  }
+
+  var Sync = {
+    inFlight: null,
+    pending: null,
+    lastError: "",
+    lastSyncedAt: "",
+
+    // Called after every local write. Waits a moment so that typing a row
+    // of six targets is one sync rather than six, and does nothing at all
+    // while a sync is already running — the merge writes locally too, and
+    // that must not start another round.
+    schedule: function () {
+      if (!Remote.signedIn() || Sync.inFlight) return;
+      if (Sync.pending) clearTimeout(Sync.pending);
+      Sync.pending = setTimeout(function () {
+        Sync.pending = null;
+        Sync.now().catch(function () { /* the error is already on the screen */ });
+      }, 1500);
+    },
+
+    now: function () {
+      if (Sync.inFlight) return Sync.inFlight;
+      if (!Remote.signedIn()) return Promise.resolve(null);
+
+      var result = { pulled: 0, pushed: 0 };
+      Sync.lastError = "";
+      onSyncStateChanged();
+
+      Sync.inFlight = Promise.all([
+        Remote.request("stores?select=*"),
+        Remote.request("targets?select=*")
+      ]).then(function (both) {
+        var stores = (both[0] || []).map(storeFromRemote);
+        var targets = (both[1] || []).map(targetFromRemote);
+
+        result.pulled =
+          mergeById(Data.adapter.stores(), stores, "storeId", Data.adapter.putStores) +
+          mergeById(Data.adapter.targets(), targets, "id", Data.adapter.putTargets);
+
+        var pushStores = newerHere(Data.adapter.stores(), stores, "storeId");
+        var pushTargets = newerHere(Data.adapter.targets(), targets, "id");
+        result.pushed = pushStores.length + pushTargets.length;
+
+        // Stores first: a target row cannot reference a store the server
+        // has not been told about yet.
+        return (pushStores.length ? Remote.upsert("stores", pushStores.map(storeToRemote)) : Promise.resolve())
+          .then(function () {
+            return pushTargets.length ? Remote.upsert("targets", pushTargets.map(targetToRemote)) : Promise.resolve();
+          });
+      }).then(function () {
+        Sync.lastSyncedAt = nowIso();
+        Sync.inFlight = null;
+        onSyncStateChanged(result);
+        return result;
+      }, function (e) {
+        Sync.lastError = e && e.message ? e.message : String(e);
+        Sync.inFlight = null;
+        onSyncStateChanged();
+        throw e;
+      });
+
+      onSyncStateChanged();
+      return Sync.inFlight;
+    }
+  };
 
   /* ═══════════════════ the maths between the targets ═══════════════════
    *
@@ -1189,6 +1515,25 @@
     $("topbar-sub").textContent = stores === 0
       ? "No stores yet — add one, or load a list on the Import tab."
       : stores + (stores === 1 ? " store" : " stores") + " · " + targets + " store-months of targets";
+
+    var badge = $("mode-badge");
+    if (!badge) return;
+    badge.className = "badge";
+    if (!Remote.signedIn()) {
+      badge.textContent = "On this device";
+      badge.title = "Data is saved in this browser only";
+    } else if (Sync.inFlight) {
+      badge.textContent = "Syncing…";
+      badge.title = "Talking to the server";
+    } else if (Sync.lastError) {
+      badge.textContent = "Sync failed";
+      badge.className = "badge is-warn";
+      badge.title = Sync.lastError;
+    } else {
+      badge.textContent = "Synced";
+      badge.className = "badge is-ok";
+      badge.title = "Signed in as " + Remote.email();
+    }
   }
 
   /* ── stores ── */
@@ -1922,7 +2267,13 @@
   function renderSettings() {
     var settings = Data.settings();
     $("set-currency").value = settings.currency;
-    $("app-version").textContent = "RetailOS v" + VERSION + " · data on this device only";
+    $("app-version").textContent = "RetailOS v" + VERSION +
+      (Remote.signedIn() ? " · syncing with Supabase" : " · data on this device only");
+    renderSyncSection();
+
+    $("backup-note").textContent = Remote.signedIn()
+      ? "The server holds a copy too, so losing this browser is no longer the end of it. A file backup is still the only thing that survives a mistake on the server."
+      : "There is one copy of this data and it lives in this browser. Keep a backup. Safari deletes storage for sites left unopened for a week or so.";
 
     var bytes = 0;
     [K.stores, K.targets, K.settings].forEach(function (key) {
@@ -1935,6 +2286,108 @@
       stores + " stores and " + targets + " store-months, about " + Math.max(1, Math.round(bytes / 1024)) + " KB. "
       + "Browsers allow a few megabytes, so there is a long way to go before size is the problem — "
       + "losing the browser is.";
+  }
+
+  /* ── sync ── */
+
+  // Called by Sync at each step, and by the screens when they render, so
+  // there is one description of the state rather than one per caller.
+  function onSyncStateChanged(result) {
+    if (typeof document === "undefined") return;
+    setSubtitle();
+    if ($("sync-status")) renderSyncSection();
+    if (result && (result.pulled || result.pushed)) {
+      // A pull that changed something is on screen already only if the user
+      // is looking at it, so redraw whichever screen that is.
+      renderStores();
+      renderTargets();
+      toast(syncSummary(result));
+    }
+  }
+
+  function syncSummary(result) {
+    if (!result.pulled && !result.pushed) return "Already up to date";
+    var parts = [];
+    if (result.pulled) parts.push(result.pulled + " in");
+    if (result.pushed) parts.push(result.pushed + " out");
+    return "Synced · " + parts.join(", ");
+  }
+
+  function renderSyncSection() {
+    var inBox = $("sync-in");
+    var outBox = $("sync-out");
+    if (!inBox || !outBox) return;
+    var signedIn = Remote.signedIn();
+    inBox.hidden = !signedIn;
+    outBox.hidden = signedIn;
+
+    if (!Remote.configured()) {
+      outBox.hidden = false;
+      inBox.hidden = true;
+      $("sync-form").hidden = true;
+      showError("sync-error", "No Supabase project is configured, so there is nothing to sign in to.");
+      return;
+    }
+    $("sync-form").hidden = false;
+
+    if (!signedIn) return;
+
+    var status = "Signed in as " + Remote.email() + ". ";
+    if (Sync.inFlight) status += "Syncing…";
+    else if (Sync.lastError) status += "Last attempt failed.";
+    else if (Sync.lastSyncedAt) status += "Last synced at " + new Date(Sync.lastSyncedAt).toLocaleTimeString() + ".";
+    else status += "Not synced yet.";
+    $("sync-status").textContent = status;
+    showError("sync-error-in", Sync.lastError);
+    $("btn-sync-now").disabled = !!Sync.inFlight;
+  }
+
+  function showError(id, message) {
+    var node = $(id);
+    if (!node) return;
+    node.textContent = message || "";
+    node.hidden = !message;
+  }
+
+  function signInFromForm(event) {
+    event.preventDefault();
+    var button = $("btn-sign-in");
+    showError("sync-error", "");
+    button.disabled = true;
+    button.textContent = "Signing in…";
+
+    Remote.signIn($("sync-email").value.trim(), $("sync-password").value)
+      .then(function () {
+        $("sync-password").value = "";
+        renderSettings();
+        setSubtitle();
+        return Sync.now();
+      })
+      .catch(function (e) {
+        showError("sync-error", e && e.message ? e.message : "Could not sign in.");
+      })
+      .then(function () {
+        button.disabled = false;
+        button.textContent = "Sign in";
+        renderSettings();
+      });
+  }
+
+  function signOutAndForget() {
+    if (!confirm("Sign out on this device? The data stays in this browser and on the server.")) return;
+    Remote.signOut().then(function () {
+      Sync.lastSyncedAt = "";
+      Sync.lastError = "";
+      renderSettings();
+      setSubtitle();
+      toast("Signed out");
+    });
+  }
+
+  function syncNow() {
+    Sync.now().then(function (result) {
+      if (result && !result.pulled && !result.pushed) toast("Already up to date");
+    }, function () { renderSyncSection(); });
   }
 
   function restoreFromFile(event) {
@@ -2031,6 +2484,9 @@
     });
     $("btn-export-stores").addEventListener("click", function () { download("retailos-stores-" + stamp() + ".csv", storesCsv(), "text/csv"); });
     $("btn-export-targets").addEventListener("click", function () { download("retailos-targets-" + stamp() + ".csv", targetsCsv(), "text/csv"); });
+    $("sync-form").addEventListener("submit", signInFromForm);
+    $("btn-sync-now").addEventListener("click", syncNow);
+    $("btn-sign-out").addEventListener("click", signOutAndForget);
     $("restore-file").addEventListener("change", restoreFromFile);
     $("btn-reset").addEventListener("click", resetEverything);
   }
@@ -2044,6 +2500,9 @@
     $("target-month").value = next;
     $("import-year").value = String(new Date().getFullYear());
     showScreen("stores");
+    // Opening the app on a second device should show that device's changes
+    // without anyone having to ask for them.
+    if (Remote.signedIn()) Sync.now().catch(function () { /* shown in Settings */ });
   }
 
   if (typeof document !== "undefined") {
@@ -2061,7 +2520,10 @@
       detectLayout: detectLayout, buildStoreRows: buildStoreRows, buildTargetRows: buildTargetRows,
       readMetric: readMetric, matchChannel: matchChannel, normaliseStatus: normaliseStatus,
       cleanDate: cleanDate, impliedSales: impliedSales, impliedSot: impliedSot, checksFor: checksFor,
-      readWorkbook: readWorkbook, mergeById: mergeById
+      readWorkbook: readWorkbook, mergeById: mergeById,
+      storeToRemote: storeToRemote, storeFromRemote: storeFromRemote,
+      targetToRemote: targetToRemote, targetFromRemote: targetFromRemote,
+      newerHere: newerHere, authMessage: authMessage, restMessage: restMessage
     };
   }
 

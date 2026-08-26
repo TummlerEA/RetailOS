@@ -240,6 +240,90 @@ var tomb = [{ id: "a", deleted: true, updatedAt: "2026-03-01T00:00:00.000Z" }];
 eq("a deletion travels", mergeInto(newer, tomb)[0].deleted, true);
 eq("and an old backup cannot undo it", mergeInto(tomb, older)[0].deleted, true);
 
+/* ── translating to and from Postgres ── */
+
+group("server shapes");
+
+var storeHere = {
+  storeId: "S001", storeName: "Oxford Street", storeManager: "A Patel",
+  storeChannel: "Retail", country: "GB", status: "active",
+  openDate: "2019-04-01", closeDate: "", salesArea: 240.5,
+  updatedAt: "2026-03-01T09:00:00.000Z"
+};
+var storeThere = app.storeToRemote(storeHere);
+eq("store id", storeThere.store_id, "S001");
+eq("name", storeThere.store_name, "Oxford Street");
+eq("channel", storeThere.store_channel, "Retail");
+eq("an empty date becomes null, not an empty string", storeThere.close_date, null);
+eq("sales area is a number", storeThere.sales_area, 240.5);
+eq("not deleted", storeThere.deleted, false);
+
+// store_name is NOT NULL, and a tombstone has no name to give it.
+var tombThere = app.storeToRemote({ storeId: "S009", deleted: true, updatedAt: "2026-03-01T09:00:00.000Z" });
+eq("a tombstone still satisfies NOT NULL", tombThere.store_name, "S009");
+eq("a tombstone still satisfies the status check", tombThere.status, "active");
+eq("and says it is deleted", tombThere.deleted, true);
+
+var storeBack = app.storeFromRemote(storeThere);
+eq("store round-trips: id", storeBack.storeId, "S001");
+eq("store round-trips: manager", storeBack.storeManager, "A Patel");
+eq("store round-trips: area", storeBack.salesArea, 240.5);
+eq("a null column comes back absent, not null", "closeDate" in storeBack, false);
+eq("a deleted row comes back as a tombstone", app.storeFromRemote({ store_id: "S009", deleted: true, updated_at: "2026-03-01T09:00:00Z" }).deleted, true);
+
+var targetHere = {
+  id: "S001|2026-03", storeId: "S001", month: "2026-03",
+  sales: 182000, traffic: 23000, conversion: 0.14, upt: 1.8, asp: 31.5,
+  updatedAt: "2026-03-01T09:00:00.000Z"
+};
+var targetThere = app.targetToRemote(targetHere);
+eq("the month becomes a real first-of-month date", targetThere.month, "2026-03-01");
+eq("conversion stays a fraction", targetThere.conversion, 0.14);
+eq("a metric with no value is sent as null, so clearing one travels", targetThere.sot, null);
+
+var targetBack = app.targetFromRemote(targetThere);
+eq("target round-trips: key", targetBack.id, "S001|2026-03");
+eq("target round-trips: month", targetBack.month, "2026-03");
+near("target round-trips: sales", targetBack.sales, 182000);
+eq("a null metric comes back absent", "sot" in targetBack, false);
+
+// Postgres timestamps arrive with an offset and six decimals; the browser
+// writes Z and three. The merge compares them as strings, so both sides
+// have to be in one format before they meet.
+var normalised = app.storeFromRemote({ store_id: "S1", store_name: "x", updated_at: "2026-03-01T09:00:00.123456+00:00" });
+eq("timestamps are normalised on the way in", normalised.updatedAt, "2026-03-01T09:00:00.123Z");
+ok("so a local write later the same second still looks newer",
+   "2026-03-01T09:00:00.900Z" > normalised.updatedAt);
+
+/* ── deciding what to send ── */
+
+group("what to push");
+var mineNow = [
+  { storeId: "A", updatedAt: "2026-02-01T00:00:00.000Z" },
+  { storeId: "B", updatedAt: "2026-02-01T00:00:00.000Z" },
+  { storeId: "C", updatedAt: "2026-02-01T00:00:00.000Z" }
+];
+var theirsNow = [
+  { storeId: "A", updatedAt: "2026-01-01T00:00:00.000Z" },
+  { storeId: "B", updatedAt: "2026-02-01T00:00:00.000Z" }
+];
+var toPush = app.newerHere(mineNow, theirsNow, "storeId").map(function (r) { return r.storeId; });
+eq("a row the server has an older copy of is sent", toPush.indexOf("A") >= 0, true);
+eq("a row the server already matches is not", toPush.indexOf("B") >= 0, false);
+eq("a row the server has never seen is sent", toPush.indexOf("C") >= 0, true);
+eq("nothing else is sent", toPush.length, 2);
+
+/* ── what the user is told when it goes wrong ── */
+
+group("failure messages");
+ok("a wrong password does not leak which half was wrong",
+   app.authMessage(400, { error: "invalid_grant" }).indexOf("email and password did not match") >= 0);
+ok("rate limiting says to wait", app.authMessage(429, {}).indexOf("Wait a minute") >= 0);
+ok("a refusal names the likely cause", app.restMessage(403, null).indexOf("may not have access") >= 0);
+ok("a constraint violation is passed through, not swallowed",
+   app.restMessage(400, { message: "violates check constraint", details: "targets_conversion_is_a_fraction" })
+     .indexOf("targets_conversion_is_a_fraction") >= 0);
+
 /* ── result ── */
 
 console.log("");

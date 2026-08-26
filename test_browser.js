@@ -59,6 +59,60 @@ function stored(page, key) {
   return page.evaluate(function (k) { return JSON.parse(localStorage.getItem(k) || "null"); }, key);
 }
 
+/* A Supabase stand-in, installed into the page before any of its own
+ * scripts run. It keeps its state in localStorage so it survives a reload,
+ * and records every push so the tests can check what was sent. */
+function fakeServer() {
+  var KEY = "__fake_server";
+  var PASSWORD = "correct-horse";
+
+  function read() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || { stores: [], targets: [], pushes: [] }; }
+    catch (e) { return { stores: [], targets: [], pushes: [] }; }
+  }
+  function write(db) { localStorage.setItem(KEY, JSON.stringify(db)); }
+
+  function reply(status, body) {
+    return Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status: status,
+      text: function () { return Promise.resolve(body === null ? "" : JSON.stringify(body)); }
+    });
+  }
+
+  window.fetch = function (url, options) {
+    url = String(url);
+    options = options || {};
+    var db = read();
+
+    if (url.indexOf("/auth/v1/token") >= 0) {
+      var sent = JSON.parse(options.body || "{}");
+      if (sent.password !== undefined && sent.password !== PASSWORD) return reply(400, { error: "invalid_grant" });
+      return reply(200, {
+        access_token: "test-token", refresh_token: "test-refresh", expires_in: 3600,
+        user: { email: sent.email || "hq@example.com" }
+      });
+    }
+    if (url.indexOf("/auth/v1/logout") >= 0) return reply(204, null);
+
+    var table = url.indexOf("/rest/v1/targets") >= 0 ? "targets" : "stores";
+    if ((options.method || "GET") === "GET") return reply(200, db[table]);
+
+    var rows = JSON.parse(options.body || "[]");
+    var idOf = table === "stores"
+      ? function (r) { return r.store_id; }
+      : function (r) { return r.store_id + "|" + r.month; };
+    db.pushes.push({ table: table, rows: rows });
+    rows.forEach(function (row) {
+      var at = -1;
+      db[table].forEach(function (existing, n) { if (idOf(existing) === idOf(row)) at = n; });
+      if (at >= 0) db[table][at] = row; else db[table].push(row);
+    });
+    write(db);
+    return reply(201, null);
+  };
+}
+
 function run() {
   var browser, page;
 
@@ -382,6 +436,138 @@ function run() {
     })
     .then(function (text) {
       ok("and so do the targets", /store-months of targets/.test(text), text);
+    })
+
+    /* ── sync ──
+     *
+     * Supabase itself is not reachable from a test run, and pointing the
+     * tests at the real project would mean writing to live data anyway.
+     * So the server is stubbed at window.fetch, which is the exact seam the
+     * app talks through: everything above it — the merge, what gets pushed,
+     * the shape of each row, the error messages — is the real code.
+     */
+    .then(function () {
+      console.log("sync");
+      return page.addInitScript(fakeServer);
+    })
+    .then(function () { return page.reload(); })
+    .then(function () {
+      // The server already knows about a store this browser has never seen,
+      // and holds a newer version of one it has.
+      return page.evaluate(function () {
+        localStorage.setItem("__fake_server", JSON.stringify({
+          stores: [
+            { store_id: "S900", store_name: "Leeds Trinity", store_channel: "Retail",
+              status: "active", updated_at: "2030-01-01T00:00:00+00:00", deleted: false },
+            { store_id: "S001", store_name: "Oxford Street", store_manager: "Server Wins",
+              status: "active", updated_at: "2030-01-01T00:00:00+00:00", deleted: false }
+          ],
+          targets: [],
+          pushes: []
+        }));
+      });
+    })
+
+    .then(function () { return page.click('.tab[data-screen="settings"]'); })
+    .then(function () { return page.locator("#mode-badge").textContent(); })
+    .then(function (text) { eq("before signing in the badge says where the data is", text.trim(), "On this device"); })
+
+    .then(function () {
+      return page.fill("#sync-email", "hq@example.com")
+        .then(function () { return page.fill("#sync-password", "wrong"); })
+        .then(function () { return page.click("#btn-sign-in"); })
+        .then(function () { return page.waitForTimeout(200); })
+        .then(function () { return page.locator("#sync-error").textContent(); });
+    })
+    .then(function (text) {
+      ok("a wrong password is refused in plain words", /did not match/.test(text), text);
+      return page.locator("#sync-in").isHidden();
+    })
+    .then(function (hidden) { ok("and nothing is signed in", hidden); })
+
+    .then(function () {
+      return page.fill("#sync-password", "correct-horse")
+        .then(function () { return page.click("#btn-sign-in"); })
+        .then(function () { return page.waitForTimeout(400); });
+    })
+    .then(function () { return page.locator("#sync-status").textContent(); })
+    .then(function (text) {
+      ok("signing in says who is signed in", /hq@example.com/.test(text), text);
+      return page.locator("#mode-badge").textContent();
+    })
+    .then(function (text) { eq("and the badge changes", text.trim(), "Synced"); })
+
+    /* what came down */
+    .then(function () { return stored(page, "retailos-stores"); })
+    .then(function (stores) {
+      var byId = {};
+      stores.forEach(function (s) { byId[s.storeId] = s; });
+      ok("a store only the server had arrives", !!byId.S900 && byId.S900.storeName === "Leeds Trinity");
+      eq("and a newer version of a store this device had wins", byId.S001.storeManager, "Server Wins");
+      eq("nothing else is lost", stores.filter(function (s) { return !s.deleted; }).length, 6);
+    })
+
+    /* what went up */
+    .then(function () {
+      return page.evaluate(function () { return JSON.parse(localStorage.getItem("__fake_server")).pushes; });
+    })
+    .then(function (pushes) {
+      var storeRows = [];
+      var targetRows = [];
+      pushes.forEach(function (p) { (p.table === "stores" ? storeRows : targetRows).push.apply(p.table === "stores" ? storeRows : targetRows, p.rows); });
+      ok("the local stores are sent up", storeRows.length >= 4, storeRows.length + " rows");
+      ok("stores go before targets", pushes.length > 1 && pushes[0].table === "stores", JSON.stringify(pushes.map(function (p) { return p.table; })));
+      eq("the store the server was already right about is not sent back", storeRows.filter(function (r) { return r.store_id === "S900"; }).length, 0);
+
+      var march = targetRows.filter(function (r) { return r.store_id === "S001" && r.month === "2026-03-01"; })[0];
+      ok("a target month is sent as a first-of-month date", !!march, JSON.stringify(targetRows.slice(0, 2)));
+      ok("conversion is sent as a fraction the check constraint accepts", march.conversion === null || (march.conversion >= 0 && march.conversion <= 1), String(march.conversion));
+      ok("every column is sent, so clearing a target travels", "sot" in march);
+      eq("and the row is not marked deleted", march.deleted, false);
+    })
+
+    /* a later edit goes up on its own */
+    .then(function () {
+      return page.evaluate(function () {
+        var db = JSON.parse(localStorage.getItem("__fake_server"));
+        db.pushes = [];
+        localStorage.setItem("__fake_server", JSON.stringify(db));
+      });
+    })
+    .then(function () { return page.click('.tab[data-screen="stores"]'); })
+    // Not S001: the seed gave the server a 2030 timestamp for it, so the
+    // pull correctly overwrites anything typed here. That is the rule
+    // working, not a store to test an outbound edit on.
+    .then(function () { return page.click('#store-list .card:has-text("S002")'); })
+    .then(function () { return page.fill("#f-storeManager", "Edited After Signin"); })
+    .then(function () { return page.click('#store-form button[type="submit"]'); })
+    .then(function () { return page.waitForTimeout(2500); })
+    .then(function () {
+      return page.evaluate(function () { return JSON.parse(localStorage.getItem("__fake_server")); });
+    })
+    .then(function (db) {
+      var sent = [];
+      db.pushes.forEach(function (p) { if (p.table === "stores") sent.push.apply(sent, p.rows); });
+      var edited = sent.filter(function (r) { return r.store_manager === "Edited After Signin"; });
+      eq("an edit made while signed in reaches the server by itself", edited.length, 1);
+      eq("and only the row that changed is sent", sent.length, 1);
+    })
+
+    /* signing out leaves the data alone */
+    .then(function () {
+      page.once("dialog", function (d) { d.accept(); });
+      return page.click('.tab[data-screen="settings"]')
+        .then(function () { return page.click("#btn-sign-out"); })
+        .then(function () { return page.waitForTimeout(200); });
+    })
+    .then(function () { return page.locator("#sync-out").isVisible(); })
+    .then(function (visible) { ok("signing out puts the form back", visible); })
+    .then(function () { return page.locator("#store-list, #mode-badge").first().textContent(); })
+    .then(function () { return page.locator("#mode-badge").textContent(); })
+    .then(function (text) { eq("and the badge is honest about it again", text.trim(), "On this device"); })
+    .then(function () { return stored(page, "retailos-stores"); })
+    .then(function (stores) {
+      eq("the data stays on the device", stores.filter(function (s) { return !s.deleted; }).length, 6);
     })
 
     .then(function () { return browser.close(); })

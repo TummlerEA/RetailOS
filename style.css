@@ -68,6 +68,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
   padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
 }
 
+.badge.is-warn { color: var(--danger); border-color: var(--danger); }
+.badge.is-ok { color: var(--ok); border-color: var(--ok); }
+
 .tabs {
   position: sticky; top: 0; z-index: 19;
   display: flex; gap: 2px;

@@ -13,8 +13,9 @@
  * security completely and must never appear in this file or any other file
  * the browser can see.
  *
- * Nothing reads this yet — the app still saves to the browser. It is here
- * so that wiring up the Supabase adapter is a matter of pointing at it.
+ * Point this at a different project and the app follows; leave the values
+ * empty and it works offline, on one device, with the Sync section in
+ * Settings saying so.
  */
 window.RETAILOS_CONFIG = {
   supabaseUrl: "https://pkothyzdactdfxfubnkk.supabase.co",
