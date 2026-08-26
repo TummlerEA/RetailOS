@@ -396,6 +396,35 @@ function run() {
       eq("the edit is saved", stores.filter(function (s) { return s.storeId === "S001"; })[0].storeManager, "J. Okonkwo");
     })
 
+    /* ── brand, kept apart from channel ── */
+    .then(function () {
+      console.log("brand");
+      return page.click('#store-list .card:has-text("S002")');
+    })
+    .then(function () { return page.locator("#f-storeBrand option").allTextContents(); })
+    .then(function (options) {
+      eq("the brand list is the five, plus a blank", options.join("|"), "—|Multi|Asics|Under Armour|Levis|Nike");
+      return page.selectOption("#f-storeBrand", "Under Armour");
+    })
+    .then(function () { return page.locator("#f-storeChannel").inputValue(); })
+    .then(function (channel) {
+      ok("choosing a brand leaves the channel alone", channel !== "Under Armour", channel);
+      return page.click('#store-form button[type="submit"]');
+    })
+    .then(function () { return page.waitForTimeout(100); })
+    .then(function () { return stored(page, "retailos-stores"); })
+    .then(function (stores) {
+      var s2 = stores.filter(function (s) { return s.storeId === "S002"; })[0];
+      eq("the brand is saved", s2.storeBrand, "Under Armour");
+      ok("and the channel survived it", !!s2.storeChannel && s2.storeChannel !== "Under Armour", s2.storeChannel);
+    })
+    .then(function () { return page.fill("#store-search", "Under Armour"); })
+    .then(function () { return page.locator("#store-list .card").count(); })
+    .then(function (count) {
+      eq("searching by brand finds it", count, 1);
+      return page.fill("#store-search", "");
+    })
+
     /* ── address and coordinates ── */
     .then(function () {
       console.log("location");
@@ -464,6 +493,8 @@ function run() {
       var lines = csv.replace(/^\ufeff/, "").trim().split("\r\n");
       var header = lines[0].split(",");
       ok("the stores CSV carries the address", header.indexOf("address") >= 0, lines[0]);
+      ok("and brand as its own column", header.indexOf("storeBrand") >= 0, lines[0]);
+      ok("alongside channel, not instead of it", header.indexOf("storeChannel") >= 0, lines[0]);
       ok("and the coordinates, for a map visual", header.indexOf("latitude") >= 0 && header.indexOf("longitude") >= 0, lines[0]);
       var row = lines.filter(function (l) { return /^S003,/.test(l); })[0];
       ok("with the coordinate unrounded", /55\.7446675/.test(row), row);

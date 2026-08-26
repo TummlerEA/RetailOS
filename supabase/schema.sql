@@ -19,6 +19,7 @@ create table if not exists public.stores (
   store_name    text not null,
   store_manager text,
   store_channel text,
+  store_brand   text,
   country       text,
   status        text        not null default 'active',
   open_date     date,
@@ -35,6 +36,13 @@ create table if not exists public.stores (
   constraint stores_channel_known
     check (store_channel is null or store_channel in
       ('Retail', 'Outlet', 'Concession', 'Franchise', 'Ecommerce', 'Pop-up')),
+
+  -- The name over the door, kept apart from the channel on purpose: a Nike
+  -- store can be full-price, an outlet or a concession, and both questions
+  -- get asked. 'Multi' is a store carrying several of these brands.
+  constraint stores_brand_known
+    check (store_brand is null or store_brand in
+      ('Multi', 'Asics', 'Under Armour', 'Levis', 'Nike')),
   constraint stores_closes_after_it_opens
     check (close_date is null or open_date is null or close_date >= open_date),
 
@@ -58,12 +66,22 @@ comment on column public.stores.deleted  is 'A tombstone. Deleting for real woul
 -- a fresh one, which already has them from the create table above. These
 -- come before the comments on them, which would otherwise be the first
 -- statement to fail on an upgrade.
+alter table public.stores add column if not exists store_brand text;
 alter table public.stores add column if not exists address   text;
 alter table public.stores add column if not exists latitude  text;
 alter table public.stores add column if not exists longitude text;
 
 do $$
 begin
+  -- Dropped and re-added rather than created once, so that changing the
+  -- list of brands is a matter of editing this file and running it again.
+  -- It fails if a row already holds a brand not on the new list, which is
+  -- the right outcome: decide what that store is before narrowing the list.
+  alter table public.stores drop constraint if exists stores_brand_known;
+  alter table public.stores add constraint stores_brand_known
+    check (store_brand is null or store_brand in
+      ('Multi', 'Asics', 'Under Armour', 'Levis', 'Nike'));
+
   if not exists (select 1 from pg_constraint where conname = 'stores_latitude_is_a_coordinate') then
     alter table public.stores add constraint stores_latitude_is_a_coordinate
       check (latitude is null or
@@ -76,6 +94,7 @@ begin
   end if;
 end $$;
 
+comment on column public.stores.store_brand is 'The name over the door. A store has one brand and, separately, one channel.';
 comment on column public.stores.latitude is 'Decimal degrees as text, e.g. 55.7446675. Text so the given precision survives; Power BI converts.';
 comment on column public.stores.longitude is 'Decimal degrees as text, e.g. 37.5658937. Negative is west.';
 
@@ -145,6 +164,7 @@ select
   t.store_id,
   s.store_name,
   s.store_channel,
+  s.store_brand,
   s.country,
   s.address,
   s.latitude,

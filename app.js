@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 3;
+  var VERSION = 4;
 
   var K = {
     stores:   "retailos-stores",
@@ -25,6 +25,11 @@
   };
 
   var CHANNELS = ["Retail", "Outlet", "Concession", "Franchise", "Ecommerce", "Pop-up"];
+
+  // The name over the door. Separate from channel on purpose: a Nike store
+  // can be full-price, an outlet, or a concession, and both questions get
+  // asked. "Multi" is a store carrying several of these brands.
+  var BRANDS = ["Multi", "Asics", "Under Armour", "Levis", "Nike"];
 
   // The six targets, in the order they appear everywhere.
   //   Transactions = Traffic x Conversion
@@ -563,6 +568,7 @@
       store_name: blankToNull(record.storeName) || record.storeId,
       store_manager: blankToNull(record.storeManager),
       store_channel: blankToNull(record.storeChannel),
+      store_brand: blankToNull(record.storeBrand),
       country: blankToNull(record.country),
       status: blankToNull(record.status) || "active",
       open_date: blankToNull(record.openDate),
@@ -580,7 +586,8 @@
     var record = { storeId: row.store_id, updatedAt: isoOrNull(row.updated_at) || nowIso() };
     if (row.deleted) { record.deleted = true; return record; }
     [["storeName", "store_name"], ["storeManager", "store_manager"],
-     ["storeChannel", "store_channel"], ["country", "country"], ["status", "status"],
+     ["storeChannel", "store_channel"], ["storeBrand", "store_brand"],
+     ["country", "country"], ["status", "status"],
      ["openDate", "open_date"], ["closeDate", "close_date"],
      ["address", "address"], ["latitude", "latitude"], ["longitude", "longitude"]].forEach(function (pair) {
       var value = row[pair[1]];
@@ -1177,6 +1184,8 @@
       syn: ["storemanager", "manager", "storemgr", "mgr", "managername", "sm"] },
     { key: "storeChannel", label: "Channel",
       syn: ["storechannel", "channel", "storetype", "type", "format", "storeformat", "concept"] },
+    { key: "storeBrand",   label: "Brand",
+      syn: ["storebrand", "brand", "fascia", "banner", "marque", "brandname", "label"] },
     { key: "country",      label: "Country",   syn: ["country", "market", "countrycode"] },
     { key: "status",       label: "Status",    syn: ["status", "state", "active"] },
     { key: "openDate",     label: "Opened",    syn: ["opendate", "opened", "openingdate", "dateopened"] },
@@ -1318,6 +1327,19 @@
     return (negative ? "-" : "") + digits;
   }
 
+  function matchBrand(value) {
+    var norm = normHeader(value);
+    if (!norm) return "";
+    for (var i = 0; i < BRANDS.length; i++) {
+      if (normHeader(BRANDS[i]) === norm) return BRANDS[i];
+    }
+    var aliases = { ua: "Under Armour", underarmor: "Under Armour", underarmour: "Under Armour",
+                    levi: "Levis", levistrauss: "Levis",
+                    multibrand: "Multi", mixed: "Multi", multibrandstore: "Multi",
+                    nikestore: "Nike", asicsstore: "Asics" };
+    return aliases[norm] || "";
+  }
+
   function matchChannel(value) {
     var norm = normHeader(value);
     if (!norm) return "";
@@ -1382,6 +1404,7 @@
           if (coord !== null) record[key] = coord;
         }
         else if (key === "storeChannel") record[key] = matchChannel(raw) || cleanText(raw);
+        else if (key === "storeBrand") record[key] = matchBrand(raw) || cleanText(raw);
         else if (key === "status") record[key] = normaliseStatus(raw);
         else record[key] = cleanText(raw);
       });
@@ -1569,7 +1592,8 @@
     var all = Data.liveStores();
     var list = query
       ? all.filter(function (s) {
-          return normHeader(s.storeId + " " + s.storeName + " " + (s.storeManager || "") + " " + (s.storeChannel || "")).indexOf(query) >= 0;
+          return normHeader(s.storeId + " " + s.storeName + " " + (s.storeManager || "")
+                            + " " + (s.storeChannel || "") + " " + (s.storeBrand || "")).indexOf(query) >= 0;
         })
       : all;
 
@@ -1596,6 +1620,7 @@
       card.appendChild(top);
 
       var bits = [];
+      if (store.storeBrand) bits.push(store.storeBrand);
       if (store.storeChannel) bits.push(store.storeChannel);
       if (store.storeManager) bits.push(store.storeManager);
       if (store.country) bits.push(store.country);
@@ -1620,6 +1645,7 @@
     $("f-storeName").value = store ? (store.storeName || "") : "";
     $("f-storeManager").value = store ? (store.storeManager || "") : "";
     $("f-storeChannel").value = store ? (store.storeChannel || "") : "";
+    $("f-storeBrand").value = store ? (store.storeBrand || "") : "";
     $("f-country").value = store ? (store.country || "") : "";
     $("f-openDate").value = store ? (store.openDate || "") : "";
     $("f-closeDate").value = store ? (store.closeDate || "") : "";
@@ -1653,6 +1679,7 @@
       storeName: name,
       storeManager: $("f-storeManager").value.trim(),
       storeChannel: $("f-storeChannel").value,
+      storeBrand: $("f-storeBrand").value,
       country: $("f-country").value.trim(),
       openDate: open,
       closeDate: close,
@@ -2212,7 +2239,7 @@
   }
 
   function storesCsv() {
-    var header = ["storeId", "storeName", "storeManager", "storeChannel", "country",
+    var header = ["storeId", "storeName", "storeManager", "storeBrand", "storeChannel", "country",
                   "status", "openDate", "closeDate", "salesArea",
                   "address", "latitude", "longitude"];
     var rows = Data.liveStores().map(function (s) {
@@ -2260,12 +2287,12 @@
   /* ── templates ── */
 
   function templateStores() {
-    var header = ["storeId", "storeName", "storeManager", "storeChannel", "country", "status",
-                   "openDate", "salesArea", "address", "latitude", "longitude"];
+    var header = ["storeId", "storeName", "storeManager", "storeBrand", "storeChannel", "country",
+                   "status", "openDate", "salesArea", "address", "latitude", "longitude"];
     return toCsv(header, [
-      ["S001", "Oxford Street", "A. Kowalski", "Retail", "United Kingdom", "active", "2019-03-14", "420"],
-      ["S002", "Bicester Village", "R. Mensah", "Outlet", "United Kingdom", "active", "2021-09-02", "260"],
-      ["S003", "Selfridges Concession", "L. Ferrari", "Concession", "United Kingdom", "active", "2023-02-20", "85"]
+      ["S001", "Oxford Street", "A. Kowalski", "Nike", "Retail", "United Kingdom", "active", "2019-03-14", "420"],
+      ["S002", "Bicester Village", "R. Mensah", "Multi", "Outlet", "United Kingdom", "active", "2021-09-02", "260"],
+      ["S003", "Selfridges Concession", "L. Ferrari", "Under Armour", "Concession", "United Kingdom", "active", "2023-02-20", "85"]
     ]);
   }
 
@@ -2467,14 +2494,16 @@
     $("btn-cancel-store").addEventListener("click", function () { $("store-dialog").close(); });
     $("btn-delete-store").addEventListener("click", deleteCurrentStore);
 
-    var channel = $("f-storeChannel");
-    var none = el("option", null, "—");
-    none.value = "";
-    channel.appendChild(none);
-    CHANNELS.forEach(function (name) {
-      var option = el("option", null, name);
-      option.value = name;
-      channel.appendChild(option);
+    [["f-storeChannel", CHANNELS], ["f-storeBrand", BRANDS]].forEach(function (pair) {
+      var select = $(pair[0]);
+      var none = el("option", null, "—");
+      none.value = "";
+      select.appendChild(none);
+      pair[1].forEach(function (name) {
+        var option = el("option", null, name);
+        option.value = name;
+        select.appendChild(option);
+      });
     });
 
     /* targets */
@@ -2558,6 +2587,7 @@
       storeToRemote: storeToRemote, storeFromRemote: storeFromRemote,
       targetToRemote: targetToRemote, targetFromRemote: targetFromRemote,
       newerHere: newerHere, authMessage: authMessage, restMessage: restMessage,
+      BRANDS: BRANDS, matchBrand: matchBrand,
       cleanCoordinate: cleanCoordinate
     };
   }

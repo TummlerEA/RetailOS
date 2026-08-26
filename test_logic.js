@@ -199,6 +199,12 @@ var nameless = app.buildStoreRows([["Store ID", "Store Name", "Manager"], ["S009
   app.detectLayout([["Store ID", "Store Name", "Manager"], ["S009", "", "X"]], null));
 ok("a store with no name is rejected", !!nameless[0].bad);
 
+var branded = [["Store ID", "Store Name", "Fascia", "Channel"],
+               ["S010", "Bicester", "Levi's", "Outlet"]];
+var brandedRow = app.buildStoreRows(branded, app.detectLayout(branded, null))[0].row;
+eq("a Fascia column is read as the brand", brandedRow.storeBrand, "Levis");
+eq("and the channel is still its own thing", brandedRow.storeChannel, "Outlet");
+
 var located = [["Store ID", "Store Name", "Address", "Lat", "Long"],
                ["S007", "Tverskaya", "12 Tverskaya St", "55.7446675", "37.5658937"]];
 var locatedRow = app.buildStoreRows(located, app.detectLayout(located, null))[0].row;
@@ -253,6 +259,25 @@ var tomb = [{ id: "a", deleted: true, updatedAt: "2026-03-01T00:00:00.000Z" }];
 eq("a deletion travels", mergeInto(newer, tomb)[0].deleted, true);
 eq("and an old backup cannot undo it", mergeInto(tomb, older)[0].deleted, true);
 
+/* ── brands ── */
+
+group("brands");
+eq("the five, exactly as written", app.BRANDS.join("|"), "Multi|Asics|Under Armour|Levis|Nike");
+eq("an exact match", app.matchBrand("Nike"), "Nike");
+eq("case and spacing do not matter", app.matchBrand("under armour"), "Under Armour");
+eq("nor does the missing space", app.matchBrand("UnderArmour"), "Under Armour");
+eq("the American spelling", app.matchBrand("Under Armor"), "Under Armour");
+eq("the initials", app.matchBrand("UA"), "Under Armour");
+eq("an apostrophe is punctuation", app.matchBrand("Levi's"), "Levis");
+eq("and the full name", app.matchBrand("Levi Strauss"), "Levis");
+eq("multi-brand written out", app.matchBrand("Multi-brand"), "Multi");
+eq("a brand that is not ours is not guessed at", app.matchBrand("Adidas"), "");
+eq("nor is an empty cell", app.matchBrand(""), "");
+
+// The two are different questions about the same store.
+ok("brand is not a channel", app.CHANNELS.indexOf("Nike") < 0);
+ok("and a channel is not a brand", app.BRANDS.indexOf("Outlet") < 0);
+
 /* ── coordinates ── */
 
 group("coordinates");
@@ -277,7 +302,7 @@ group("server shapes");
 
 var storeHere = {
   storeId: "S001", storeName: "Oxford Street", storeManager: "A Patel",
-  storeChannel: "Retail", country: "GB", status: "active",
+  storeChannel: "Retail", storeBrand: "Nike", country: "GB", status: "active",
   openDate: "2019-04-01", closeDate: "", salesArea: 240.5,
   address: "1 Oxford Street", latitude: "51.5152300", longitude: "-0.1419300",
   updatedAt: "2026-03-01T09:00:00.000Z"
@@ -286,6 +311,7 @@ var storeThere = app.storeToRemote(storeHere);
 eq("store id", storeThere.store_id, "S001");
 eq("name", storeThere.store_name, "Oxford Street");
 eq("channel", storeThere.store_channel, "Retail");
+eq("brand travels separately", storeThere.store_brand, "Nike");
 eq("an empty date becomes null, not an empty string", storeThere.close_date, null);
 eq("sales area is a number", storeThere.sales_area, 240.5);
 eq("the address goes up", storeThere.address, "1 Oxford Street");
@@ -302,6 +328,7 @@ eq("and says it is deleted", tombThere.deleted, true);
 var storeBack = app.storeFromRemote(storeThere);
 eq("store round-trips: id", storeBack.storeId, "S001");
 eq("store round-trips: manager", storeBack.storeManager, "A Patel");
+eq("store round-trips: brand", storeBack.storeBrand, "Nike");
 eq("store round-trips: area", storeBack.salesArea, 240.5);
 eq("store round-trips: latitude, still as text", storeBack.latitude, "51.5152300");
 eq("store round-trips: address", storeBack.address, "1 Oxford Street");

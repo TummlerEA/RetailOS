@@ -10,8 +10,12 @@ Everything is on one screen's worth of tabs: **Stores**, **Targets**,
 
 ## What it does today
 
-- **Stores.** ID, name, manager, channel, country, address, latitude,
-  longitude, status, opening and closing dates, sales area. The store ID is
+- **Stores.** ID, name, manager, brand, channel, country, address, latitude,
+  longitude, status, opening and closing dates, sales area. Brand is the name
+  over the door (Multi, Asics, Under Armour, Levis, Nike); channel is how the
+  store trades (Retail, Outlet, Concession, Franchise, Ecommerce, Pop-up).
+  They are deliberately two fields: the same brand can be full-price in one
+  place and an outlet in another, and both slices get asked for. The store ID is
   the join key everything else hangs off, so it is fixed once a store exists
   and cannot be retyped. Coordinates are kept as text so the precision given
   survives exactly, but only a real coordinate is accepted — both the

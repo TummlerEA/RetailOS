@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>RetailOS</title>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏬</text></svg>">
 </head>
 <body>
@@ -204,10 +204,17 @@
       <input type="text" id="f-storeManager" autocomplete="off">
       <p class="hint">Name only. Don't put contact details in here.</p>
     </div>
-    <div class="field">
-      <label for="f-storeChannel">Channel</label>
-      <select id="f-storeChannel"></select>
+    <div class="row">
+      <div class="field">
+        <label for="f-storeBrand">Brand</label>
+        <select id="f-storeBrand"></select>
+      </div>
+      <div class="field">
+        <label for="f-storeChannel">Channel</label>
+        <select id="f-storeChannel"></select>
+      </div>
     </div>
+    <p class="hint">Brand is the name over the door. Channel is how it trades — the same brand can be full-price in one place and an outlet in another.</p>
     <div class="field">
       <label for="f-country">Country</label>
       <input type="text" id="f-country" autocomplete="off" maxlength="40">
@@ -263,7 +270,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="config.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="config.js?v=4"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

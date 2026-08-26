@@ -32,8 +32,8 @@ begin
   -- naming the fix does.
   if (select count(*) from information_schema.columns
       where table_schema = 'public' and table_name = 'stores'
-        and column_name in ('address','latitude','longitude')) <> 3 then
-    raise exception E'\n  - the address, latitude or longitude column is missing. Re-run schema.sql: it adds them to an existing database without touching the data.';
+        and column_name in ('address','latitude','longitude','store_brand')) <> 4 then
+    raise exception E'\n  - the address, latitude, longitude or store_brand column is missing. Re-run schema.sql: it adds them to an existing database without touching the data.';
   end if;
 
   /* ── row-level security is the thing protecting the data ── */
@@ -80,6 +80,9 @@ begin
   begin insert into public.targets(store_id,month,sales) values ('VFY3','2026-04-01',-5);
     problems := problems || 'a negative target is accepted'::text; exception when check_violation then null; end;
 
+  begin insert into public.stores(store_id,store_name,store_brand) values ('VFY7','probe','Adidas');
+    problems := problems || 'any brand name is accepted'::text; exception when check_violation then null; end;
+
   begin insert into public.stores(store_id,store_name,latitude) values ('VFY4','probe','137.5');
     problems := problems || 'a latitude past the pole is accepted'::text; exception when check_violation then null; end;
 
@@ -120,9 +123,12 @@ begin
   if amount is null or abs(amount - 182574) > 1
     then problems := problems || 'the view is not computing implied sales correctly'::text; end if;
 
+  update public.stores set store_brand = 'Under Armour' where store_id = 'VFY9';
+
   if not exists (select 1 from public.targets_report
-                 where store_id = 'VFY9' and latitude = '55.7446675' and address = '12 Tverskaya St')
-    then problems := problems || 'the view is not carrying the address and coordinates through'::text; end if;
+                 where store_id = 'VFY9' and latitude = '55.7446675' and address = '12 Tverskaya St'
+                   and store_brand = 'Under Armour')
+    then problems := problems || 'the view is not carrying the brand, address and coordinates through'::text; end if;
 
   reset role;
 
