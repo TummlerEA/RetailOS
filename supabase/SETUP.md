@@ -9,7 +9,7 @@ Twenty minutes, once. You need a Supabase account and nothing else installed.
 | Field | What to put |
 | --- | --- |
 | Organisation | The one created with your account |
-| Name | `retailos` |
+| Name | Anything you like — `retail-ops`, `retailos`. It is only a label in the dashboard; the project is identified by the URL Supabase gives it |
 | Database password | Press **Generate**, then **save it in your password manager** |
 | Region | **London (eu-west-2)** — nearest to the data and the people |
 | Plan | Free |
