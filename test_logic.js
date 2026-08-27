@@ -139,11 +139,12 @@ eq("and named", withJunk.ignored[0], "Comments");
 
 group("metric values");
 near("conversion as a fraction", app.readMetric("conversion", "0.14").value, 0.14);
-near("conversion as points", app.readMetric("conversion", "14").value, 0.14);
-near("conversion as text percent", app.readMetric("conversion", "14%").value, 0.14);
-ok("percent conversion is called out", app.readMetric("conversion", "14").note !== null);
-ok("fractional conversion is not", app.readMetric("conversion", "0.14").note === null || app.readMetric("conversion", "0.14").note === undefined);
-ok("conversion over 100% refused", !!app.readMetric("conversion", "140").error);
+near("conversion written with a percent sign", app.readMetric("conversion", "14%").value, 0.14);
+// Reading a cell no longer decides the unit — a bare 14 could be 14% or a
+// genuine 1400%, and only the rest of the row can say. See "conversion
+// units" below, where that decision is made and tested.
+near("a bare number is carried through as written", app.readMetric("conversion", "14").value, 14);
+ok("a negative conversion is still refused", !!app.readMetric("conversion", "-1").error);
 ok("negative traffic refused", !!app.readMetric("traffic", "-10").error);
 ok("words refused", !!app.readMetric("sales", "tbc").error);
 eq("blank is simply absent", app.readMetric("sales", "").value, null);
@@ -394,6 +395,63 @@ var ambiguous = app.storeIndex([
 var clash = byNameOnly("Central", ambiguous);
 ok("a name shared by two stores is refused", !!clash.bad);
 ok("and says to add an ID column", /store ID column/.test(clash.bad), clash.bad);
+
+/* ── blanks that are not empty cells ── */
+
+group("blank markers");
+["-", " - ", "  -   ", "–", "—", "n/a", "N/A", "#N/A", "нет"].forEach(function (v) {
+  eq(JSON.stringify(v) + " is an empty cell, not a broken number",
+     JSON.stringify(app.readMetric("conversion", v)), '{"value":null}');
+});
+eq("a real number is still read", app.readMetric("sales", "1,234").value, 1234);
+ok("and real rubbish is still an error", !!app.readMetric("sales", "tbc").error);
+
+/* ── which unit a conversion is in ── */
+
+group("conversion units");
+function convOf(cells) {
+  var rows = [["month", "store_id", "sales", "traffic", "conversion", "upt", "asp"],
+              ["01.01.2020", "S1"].concat(cells)];
+  var idx = app.storeIndex([{ storeId: "S1", storeName: "" }]);
+  return app.buildTargetRows(rows, app.detectLayout(rows, null), null, null, idx);
+}
+
+// A rate above 1 that the row's own arithmetic confirms: 1000 x 1.128 x 1.5
+// x 100 = 169,200. Dividing by 100 would make this row wrong by 99%.
+var above = convOf(["169200", "1000", "1.128", "1.5", "100"]);
+near("a conversion above 100% is kept when the row's arithmetic says so",
+     above.items[0].row.conversion, 1.128);
+eq("and it is not reported as a correction", JSON.stringify(above.notes), "{}");
+
+// The same shape, but the sales figure agrees with percentage points:
+// 1000 x 0.075 x 1.5 x 100 = 11,250.
+var points = convOf(["11250", "1000", "7.5", "1.5", "100"]);
+near("percentage points are converted when the arithmetic says so",
+     points.items[0].row.conversion, 0.075);
+ok("and that is reported", !!points.notes["read as percentage points"]);
+
+// Nothing to check against: the old assumption still applies, and is said.
+var alone = [["month", "store_id", "conversion"], ["01.01.2020", "S1", "7.5"]];
+var lonely = app.buildTargetRows(alone, app.detectLayout(alone, null), null, null,
+                                 app.storeIndex([{ storeId: "S1", storeName: "" }]));
+near("with nothing to check against, above 1 is taken as percentage points",
+     lonely.items[0].row.conversion, 0.075);
+ok("and said so", !!lonely.notes["read as percentage points"]);
+
+near("a plain fraction is untouched", convOf(["11250", "1000", "0.075", "1.5", "100"]).items[0].row.conversion, 0.075);
+
+/* ── the same store-month twice in one file ── */
+
+group("duplicate store-months");
+var twice = [["month", "store_id", "sales"],
+             ["01.03.2022", "S1", "2045535"],
+             ["01.03.2022", "S1", "1223775"]];
+var dup = app.buildTargetRows(twice, app.detectLayout(twice, null), null, null,
+                              app.storeIndex([{ storeId: "S1", storeName: "" }]));
+eq("they collapse to one store-month", dup.items.filter(function (i) { return i.row; }).length, 1);
+near("the last one in the file wins", dup.items[0].row.sales, 1223775);
+ok("but it is no longer silent",
+   !!dup.notes["store-months appear more than once in this file — the last value in the file wins"]);
 
 /* ── brands ── */
 

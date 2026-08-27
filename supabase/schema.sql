@@ -119,10 +119,19 @@ create table if not exists public.targets (
   constraint targets_month_is_first_of_month
     check (month = date_trunc('month', month)::date),
 
-  -- Conversion is a fraction, never percentage points. The app normalises
-  -- 14, 0.14 and '14%' on the way in; this makes sure nothing else can't.
-  constraint targets_conversion_is_a_fraction
-    check (conversion is null or (conversion >= 0 and conversion <= 1)),
+  -- Conversion is a rate, never percentage points: 0.14, not 14.
+  --
+  -- The ceiling is 10, not 1. Above 100% is unusual but real — a store
+  -- whose counter under-reports sells to more people than it counted, and
+  -- real target files carry rows like that. Refusing them would be refusing
+  -- the truth. A ceiling of 10 still catches the mistake this guards
+  -- against, a whole column typed in percentage points.
+  --
+  -- The app decides the unit per row rather than by a threshold: whichever
+  -- reading reproduces Sales = Traffic x Conversion x UPT x ASP is the one
+  -- that was meant. This is the backstop for writes that bypass it.
+  constraint targets_conversion_is_a_rate
+    check (conversion is null or (conversion >= 0 and conversion <= 10)),
 
   constraint targets_are_not_negative
     check (
@@ -138,6 +147,17 @@ comment on column public.targets.month is 'Always the first of the month. Calend
 comment on column public.targets.sot   is 'Sales / Traffic. Also equals conversion * upt * asp.';
 
 create index if not exists targets_month_idx on public.targets (month);
+
+-- The conversion ceiling was 1 in earlier versions of this file, which
+-- refused real rows. A database created then keeps that constraint until it
+-- is dropped by name, so it is replaced here rather than left behind.
+do $$
+begin
+  alter table public.targets drop constraint if exists targets_conversion_is_a_fraction;
+  alter table public.targets drop constraint if exists targets_conversion_is_a_rate;
+  alter table public.targets add constraint targets_conversion_is_a_rate
+    check (conversion is null or (conversion >= 0 and conversion <= 10));
+end $$;
 
 -- ────────────────────── the view Power BI reads ──────────────────────
 --

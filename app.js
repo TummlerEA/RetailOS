@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 8;
+  var VERSION = 9;
 
   var K = {
     stores:   "retailos-stores",
@@ -1442,20 +1442,55 @@
    * three different files for the same thing, so anything above 1 is read as
    * percentage points and the preview says that it was.
    */
+  // A spreadsheet says "nothing here" with a dash as often as with an empty
+  // cell. Treating that as a broken number turned whole rows into errors
+  // for a value that was never meant to be there.
+  function isBlank(raw) {
+    var text = String(raw).trim().toLowerCase();
+    return text === "" || /^[-–—]+$/.test(text) ||
+           text === "n/a" || text === "na" || text === "#n/a" || text === "нет" || text === "б/д";
+  }
+
   function readMetric(metricKey, raw) {
-    if (raw === null || raw === undefined || String(raw).trim() === "") return { value: null };
+    if (raw === null || raw === undefined || isBlank(raw)) return { value: null };
     var n = toNumber(raw);
     if (n === null) return { error: '"' + String(raw).slice(0, 24) + '" is not a number' };
 
     if (metricKey === "conversion") {
-      var wasPercent = false;
-      if (n > 1) { n = n / 100; wasPercent = true; }
       if (n < 0) return { error: "conversion below zero" };
-      if (n > 1) return { error: "conversion above 100%" };
-      return { value: round(n, 6), note: wasPercent ? "read as percentage points" : null };
+      // Left exactly as written. Whether a value above 1 means a rate or
+      // percentage points is decided per row once the rest of it is known —
+      // see settleConversion.
+      return { value: round(n, 6) };
     }
     if (n < 0 && metricKey !== "sot") return { error: metricKey + " below zero" };
     return { value: round(n, 6) };
+  }
+
+  // 0.075 is unambiguous. 7.5 is not: it could be a 7.5% conversion written
+  // in percentage points, or a genuine 750%. Dividing everything above 1 by
+  // 100 was wrong — a store whose counter under-reports really can sell to
+  // more people than it counted, and four rows of real data did.
+  //
+  // The row usually settles it itself, because Sales = Traffic x Conversion
+  // x UPT x ASP: whichever reading reproduces the stated sales is the one
+  // that was meant. Only when the row cannot answer does the old assumption
+  // apply, and then it is reported.
+  function settleConversion(row) {
+    var c = row.conversion;
+    if (c === undefined || c === null || c <= 1) return null;
+
+    var others = row.traffic && row.upt && row.asp && row.sales;
+    if (others) {
+      var asRate = Math.abs(row.traffic * c * row.upt * row.asp - row.sales);
+      var asPoints = Math.abs(row.traffic * (c / 100) * row.upt * row.asp - row.sales);
+      if (asRate <= asPoints) return null;          // it means what it says
+      row.conversion = round(c / 100, 6);
+      return "read as percentage points";
+    }
+
+    row.conversion = round(c / 100, 6);
+    return "read as percentage points";
   }
 
   /* ── building proposals ── */
@@ -1534,15 +1569,28 @@
     var seen = {};
     var notes = {};
     var index = stores && stores.byId ? stores : storeIndex([]);
+    var firstRow = {};
+    var reported = {};
     var nameCol = layout.storeFieldCols ? layout.storeFieldCols.storeName : undefined;
 
-    function record(storeId, month, metricKey, raw, label) {
+    function record(storeId, month, metricKey, raw, label, atRow) {
       var read = readMetric(metricKey, raw);
       if (read.error) { out.push({ bad: storeId + " " + monthLabel(month) + ": " + read.error, raw: label }); return; }
       if (read.value === null) return;
       if (read.note) notes[read.note] = (notes[read.note] || 0) + 1;
       var key = storeId + "|" + month;
-      if (!seen[key]) { seen[key] = { storeId: storeId, month: month }; out.push({ row: seen[key] }); }
+      if (!seen[key]) {
+        seen[key] = { storeId: storeId, month: month };
+        firstRow[key] = atRow;
+        out.push({ row: seen[key] });
+      } else if (firstRow[key] !== atRow && !reported[key]) {
+        // The same store-month twice in one file, with different numbers,
+        // is a re-cut someone forgot to remove. Silently keeping the last
+        // one is how a file loses half a month.
+        reported[key] = true;
+        notes["store-months appear more than once in this file — the last value in the file wins"] =
+          (notes["store-months appear more than once in this file — the last value in the file wins"] || 0) + 1;
+      }
       seen[key][metricKey] = read.value;
     }
 
@@ -1550,6 +1598,7 @@
       var row = rows[r] || [];
       var id = layout.storeIdCol >= 0 ? cleanText(row[layout.storeIdCol]) : "";
       var named = nameCol !== undefined ? cleanText(row[nameCol]) : "";
+
 
       // A file with no ID column can still be placed, as long as the name
       // picks out exactly one store. Two stores sharing a name is not
@@ -1605,7 +1654,7 @@
         }
         if (!metricKey) { out.push({ bad: "No metric chosen for this grid", raw: id }); continue; }
         layout.monthCols.forEach(function (col) {
-          record(id, col.month, metricKey, row[col.at], id + " " + monthLabel(col.month));
+          record(id, col.month, metricKey, row[col.at], id + " " + monthLabel(col.month), r);
         });
       } else {
         var parsed = parseMonth(row[layout.monthCol], defaultYear);
@@ -1622,14 +1671,21 @@
             valueCol = candidates.length === 1 ? layout.metricCols[candidates[0]] : undefined;
           }
           if (valueCol === undefined) { out.push({ bad: "Cannot tell which column holds the value", raw: id }); continue; }
-          record(id, parsed.key, mk, row[valueCol], id);
+          record(id, parsed.key, mk, row[valueCol], id, r);
         } else {
           Object.keys(layout.metricCols).forEach(function (mk2) {
-            record(id, parsed.key, mk2, row[layout.metricCols[mk2]], id);
+            record(id, parsed.key, mk2, row[layout.metricCols[mk2]], id, r);
           });
         }
       }
     }
+    // Conversion is settled once the whole row is known, not cell by cell.
+    out.forEach(function (item) {
+      if (!item.row) return;
+      var note = settleConversion(item.row);
+      if (note) notes[note] = (notes[note] || 0) + 1;
+    });
+
     return { items: out, notes: notes };
   }
 
@@ -2718,6 +2774,7 @@
       readMetric: readMetric, matchChannel: matchChannel, normaliseStatus: normaliseStatus,
       cleanDate: cleanDate, impliedSales: impliedSales, impliedSot: impliedSot, checksFor: checksFor,
       readWorkbook: readWorkbook, mergeById: mergeById, storeIndex: storeIndex,
+      settleConversion: settleConversion, isBlank: isBlank,
       storeToRemote: storeToRemote, storeFromRemote: storeFromRemote,
       targetToRemote: targetToRemote, targetFromRemote: targetFromRemote,
       newerHere: newerHere, authMessage: authMessage, restMessage: restMessage,

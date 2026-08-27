@@ -43,6 +43,19 @@ Everything is on one screen's worth of tabs: **Stores**, **Targets**,
   Postgres for Power BI to read. Signed out it still works exactly as
   before, on that device only.
 
+### Conversion, and which unit it is in
+
+Conversion is stored as a rate: 0.075, not 7.5. A cell written `7.50%` is
+unambiguous. A bare `7.5` is not — it could be 7.5% or a genuine 750% — so
+the unit is decided per row rather than by a threshold: whichever reading
+reproduces Sales = Traffic × Conversion × UPT × ASP is the one that was
+meant. Only when the row has nothing to check against is a value above 1
+assumed to be percentage points, and then the import says how many.
+
+Above 100% is unusual but real, and is kept. A store whose counter
+under-reports sells to more people than it counted, and real target files
+carry rows like that.
+
 ## The six targets are not six independent numbers
 
 ```

@@ -74,8 +74,14 @@ begin
     exception when check_violation then null; end;
 
   begin insert into public.targets(store_id,month,conversion) values ('VFY3','2026-03-01',35);
-    problems := problems || 'conversion is accepted as percentage points, not a fraction'::text;
+    problems := problems || 'a whole column of percentage points would be accepted as conversion'::text;
     exception when check_violation then null; end;
+
+  -- Above 100% is unusual but real, and refusing it refuses real data.
+  begin insert into public.targets(store_id,month,conversion) values ('VFY3','2026-05-01',1.128);
+    delete from public.targets where store_id = 'VFY3' and month = '2026-05-01';
+    exception when check_violation then
+      problems := problems || 'a conversion above 100% is refused, but real target files contain them'::text; end;
 
   begin insert into public.targets(store_id,month,sales) values ('VFY3','2026-04-01',-5);
     problems := problems || 'a negative target is accepted'::text; exception when check_violation then null; end;
