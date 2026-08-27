@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 11;
+  var VERSION = 12;
 
   var K = {
     stores:   "retailos-stores",
@@ -44,7 +44,7 @@
     { key: "conversion", label: "Conversion", kind: "percent", dp: 2, driver: true },
     { key: "upt",        label: "UPT",        kind: "ratio",   dp: 2, driver: true },
     { key: "asp",        label: "ASP",        kind: "money",   dp: 2, driver: true },
-    { key: "sot",        label: "SOT",        kind: "money",   dp: 2 }
+    { key: "sot",        label: "SOT",        kind: "money",   dp: 0 }
   ];
 
   var METRIC_KEYS = METRICS.map(function (m) { return m.key; });
