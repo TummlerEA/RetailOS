@@ -62,6 +62,13 @@ create table if not exists public.stores (
 comment on table  public.stores          is 'One row per store. The system of record for what the POS does not know.';
 comment on column public.stores.store_id is 'Stable forever. Never reused, never renumbered — Power BI joins on this.';
 comment on column public.stores.deleted  is 'A tombstone. Deleting for real would let an old device resurrect the row.';
+-- `create table if not exists` does nothing to a table that already exists,
+-- so every constraint below is dropped by name and re-added on each run.
+-- Without that, this file describes only how a database was first created,
+-- not how it is now — and editing a column in the Supabase Table Editor
+-- leaves its own auto-named constraint behind, which is how a store_channel
+-- restricted to brand names came to reject 'Retail'.
+--
 -- Adding the columns to a database created before they existed. Harmless on
 -- a fresh one, which already has them from the create table above. These
 -- come before the comments on them, which would otherwise be the first
@@ -73,14 +80,30 @@ alter table public.stores add column if not exists longitude text;
 
 do $$
 begin
-  -- Dropped and re-added rather than created once, so that changing the
-  -- list of brands is a matter of editing this file and running it again.
-  -- It fails if a row already holds a brand not on the new list, which is
-  -- the right outcome: decide what that store is before narrowing the list.
+  -- Dropped and re-added rather than created once, so that changing any of
+  -- these lists is a matter of editing this file and running it again. Each
+  -- fails if a row already holds a value the new list drops, which is the
+  -- right outcome: decide what that row is before narrowing the list.
+  --
+  -- The *_check names are what the Table Editor calls a constraint it adds
+  -- to a column. Dropping them is deliberate: this file is the vocabulary,
+  -- and a second opinion attached to the same column only ever conflicts.
+  alter table public.stores drop constraint if exists stores_store_channel_check;
+  alter table public.stores drop constraint if exists stores_channel_known;
+  alter table public.stores add constraint stores_channel_known
+    check (store_channel is null or store_channel in
+      ('Retail', 'Outlet', 'Concession', 'Franchise', 'Ecommerce', 'Pop-up'));
+
+  alter table public.stores drop constraint if exists stores_store_brand_check;
   alter table public.stores drop constraint if exists stores_brand_known;
   alter table public.stores add constraint stores_brand_known
     check (store_brand is null or store_brand in
       ('Multi', 'Asics', 'Under Armour', 'Levis', 'Nike'));
+
+  alter table public.stores drop constraint if exists stores_status_check;
+  alter table public.stores drop constraint if exists stores_status_known;
+  alter table public.stores add constraint stores_status_known
+    check (status in ('active', 'pipeline', 'closed'));
 
   if not exists (select 1 from pg_constraint where conname = 'stores_latitude_is_a_coordinate') then
     alter table public.stores add constraint stores_latitude_is_a_coordinate
