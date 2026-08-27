@@ -175,7 +175,12 @@ now** is pressed:
 Because the merge is order-independent, it does not matter which device
 syncs first or how long one of them was offline. Stores are pushed before
 targets, since a target row cannot reference a store the server has not been
-told about.
+told about — but the two are pushed independently: a store the server
+refuses does not stop the targets going up, and both failures are reported
+together.
+
+Anything this device holds that the server has not accepted is counted in
+Settings, so the app and the database cannot quietly disagree.
 
 The browser talks to PostgREST directly over `fetch` — no SDK, no bundle,
 and one fewer dependency to keep patched. Sign-in is Supabase Auth; the

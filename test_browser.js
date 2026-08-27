@@ -99,6 +99,15 @@ function fakeServer() {
     if ((options.method || "GET") === "GET") return reply(200, db[table]);
 
     var rows = JSON.parse(options.body || "[]");
+    // db.refuse names a table the server rejects, standing in for a check
+    // constraint the rows violate. The attempt is still recorded — the
+    // point of the test is that it was made.
+    if (db.refuse === table) {
+      db.pushes.push({ table: table, rows: rows, refused: true });
+      write(db);
+      return reply(400, { message: 'new row for relation "' + table + '" violates check constraint',
+                          details: table + "_something_known" });
+    }
     // db.slow holds the first write open. A change made in that window has
     // missed this round's push selection entirely, which is the case being
     // tested: it is owed a round of its own.
@@ -760,6 +769,61 @@ function run() {
          sent.filter(function (r) { return r.store_manager === "First Edit"; }).length > 0, true);
       eq("and so does one made while that sync was still pushing",
          sent.filter(function (r) { return r.store_manager === "Edited Mid Sync"; }).length, 1);
+    })
+
+    /* a store the server refuses must not take the targets down with it */
+    .then(function () {
+      console.log("one bad table");
+      return page.evaluate(function () {
+        var db = JSON.parse(localStorage.getItem("__fake_server"));
+        db.pushes = [];
+        db.refuse = "stores";        // every store push is rejected
+        localStorage.setItem("__fake_server", JSON.stringify(db));
+      });
+    })
+    .then(function () { return page.click('.tab[data-screen="stores"]'); })
+    .then(function () { return page.click('#store-list .card:has-text("S003")'); })
+    .then(function () { return page.fill("#f-storeManager", "Will Be Refused"); })
+    .then(function () { return page.click('#store-form button[type="submit"]'); })
+    .then(function () { return page.click('.tab[data-screen="targets"]'); })
+    .then(function () { return page.locator("#target-grid input").first().fill("4242"); })
+    .then(function () { return page.locator("#target-grid input").first().blur(); })
+    .then(function () { return page.waitForTimeout(3000); })
+    .then(function () {
+      return page.evaluate(function () { return JSON.parse(localStorage.getItem("__fake_server")); });
+    })
+    .then(function (db) {
+      var tables = db.pushes.map(function (p) { return p.table; });
+      ok("the stores push is still attempted", tables.indexOf("stores") >= 0, JSON.stringify(tables));
+      ok("and the targets push happens even though it failed",
+         tables.indexOf("targets") >= 0, JSON.stringify(tables));
+    })
+    .then(function () { return page.click('.tab[data-screen="settings"]'); })
+    .then(function () { return page.locator("#sync-error-in").textContent(); })
+    .then(function (text) {
+      ok("the failure names the table it was in", /Stores —/.test(text), text);
+      ok("and carries the constraint through", /violates check constraint/.test(text), text);
+      return page.locator("#sync-status").textContent();
+    })
+    .then(function (text) {
+      ok("and the count of what is stranded is on screen",
+         /have not reached the server/.test(text), text);
+    })
+    .then(function () { return page.locator("#mode-badge").textContent(); })
+    .then(function (t) { eq("with the badge saying so", t.trim(), "Sync failed"); })
+    .then(function () {
+      return page.evaluate(function () {
+        var db = JSON.parse(localStorage.getItem("__fake_server"));
+        delete db.refuse;
+        localStorage.setItem("__fake_server", JSON.stringify(db));
+      });
+    })
+    .then(function () { return page.click("#btn-sync-now"); })
+    .then(function () { return page.waitForTimeout(600); })
+    .then(function () { return page.locator("#sync-status").textContent(); })
+    .then(function (text) {
+      ok("and once the server accepts it, nothing is left behind",
+         !/have not reached the server/.test(text), text);
     })
 
     /* signing out leaves the data alone */

@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 10;
+  var VERSION = 11;
 
   var K = {
     stores:   "retailos-stores",
@@ -803,6 +803,10 @@
     owed: false,
     lastError: "",
     lastSyncedAt: "",
+    // What this device holds that the server does not, as of the last
+    // attempt. Without it a failed push is invisible unless someone opens
+    // Settings and reads the error.
+    behind: { stores: 0, targets: 0 },
 
     // Called after every local write. Waits a moment so that typing a row
     // of six targets is one sync rather than six.
@@ -853,13 +857,33 @@
         var pushTargets = newerHere(Data.adapter.targets(), targets, "id");
         result.pushed = pushStores.length + pushTargets.length;
 
-        // Stores first: a target row cannot reference a store the server
-        // has not been told about yet.
+        // Stores go first, because a target cannot reference a store the
+        // server has not been told about yet. But a store the server
+        // refuses must not take the targets down with it: they are separate
+        // tables, and one bad store row used to mean no target ever
+        // reached the server at all, with nothing on screen to say so.
+        var outcome = { stores: 0, targets: 0, failures: [] };
+
+        function why(e) { return e && e.message ? e.message : String(e); }
+
         return (pushStores.length ? Remote.upsert("stores", pushStores.map(storeToRemote)) : Promise.resolve())
+          .then(function () { outcome.stores = pushStores.length; },
+                function (e) { outcome.failures.push("Stores — " + why(e)); })
           .then(function () {
             return pushTargets.length ? Remote.upsert("targets", pushTargets.map(targetToRemote)) : Promise.resolve();
+          })
+          .then(function () { outcome.targets = pushTargets.length; },
+                function (e) { outcome.failures.push("Targets — " + why(e)); })
+          .then(function () {
+            result.pushed = outcome.stores + outcome.targets;
+            Sync.behind = {
+              stores: pushStores.length - outcome.stores,
+              targets: pushTargets.length - outcome.targets
+            };
+            if (outcome.failures.length) throw new Error(outcome.failures.join("  ·  "));
           });
       }).then(function () {
+        Sync.behind = { stores: 0, targets: 0 };
         Sync.lastSyncedAt = nowIso();
         Sync.inFlight = null;
         onSyncStateChanged(result);
@@ -1781,7 +1805,7 @@
     } else if (Sync.inFlight) {
       badge.textContent = "Syncing…";
       badge.title = "Talking to the server";
-    } else if (Sync.lastError) {
+    } else if (Sync.lastError || Sync.behind.stores || Sync.behind.targets) {
       badge.textContent = "Sync failed";
       badge.className = "badge is-warn";
       badge.title = Sync.lastError;
@@ -2605,6 +2629,14 @@
     else if (Sync.lastError) status += "Last attempt failed.";
     else if (Sync.lastSyncedAt) status += "Last synced at " + new Date(Sync.lastSyncedAt).toLocaleTimeString() + ".";
     else status += "Not synced yet.";
+
+    // The app showing months the database has never seen is exactly the
+    // confusion this line exists to prevent.
+    var behind = [];
+    if (Sync.behind.stores) behind.push(Sync.behind.stores + (Sync.behind.stores === 1 ? " store" : " stores"));
+    if (Sync.behind.targets) behind.push(Sync.behind.targets + " store-month" + (Sync.behind.targets === 1 ? "" : "s"));
+    if (behind.length) status += " " + behind.join(" and ") + " on this device have not reached the server.";
+
     $("sync-status").textContent = status;
     showError("sync-error-in", Sync.lastError);
     $("btn-sync-now").disabled = !!Sync.inFlight;
