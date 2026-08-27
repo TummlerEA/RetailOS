@@ -5,30 +5,51 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>RetailOS</title>
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏬</text></svg>">
 </head>
 <body>
 
+<div class="shell">
+<div class="sidebar">
+
 <header class="topbar">
   <div class="topbar-main">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-5h16l1 5"/><path d="M4 9v10a1 1 0 001 1h14a1 1 0 001-1V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></svg>
+    </span>
     <h1>RetailOS</h1>
     <span class="badge" id="mode-badge" title="Where data is stored">On this device</span>
   </div>
   <div class="topbar-sub" id="topbar-sub"></div>
 </header>
 
+<div class="tabs-label">Workspace</div>
 <nav class="tabs" role="tablist">
-  <button class="tab is-active" id="tab-stores" role="tab" data-screen="stores">Stores</button>
-  <button class="tab" id="tab-targets" role="tab" data-screen="targets">Targets</button>
-  <button class="tab" id="tab-import" role="tab" data-screen="import">Import</button>
-  <button class="tab" id="tab-settings" role="tab" data-screen="settings">Settings</button>
+  <button class="tab is-active" id="tab-stores" role="tab" data-screen="stores">
+    <svg class="tab-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1-5h16l1 5"/><path d="M4 9v10a1 1 0 001 1h14a1 1 0 001-1V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></svg>
+    Stores
+  </button>
+  <button class="tab" id="tab-targets" role="tab" data-screen="targets">
+    <svg class="tab-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".9" fill="currentColor" stroke="none"/></svg>
+    Targets
+  </button>
+  <button class="tab" id="tab-import" role="tab" data-screen="import">
+    <svg class="tab-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="M7.3 9.6L12 5l4.7 4.6"/><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+    Import
+  </button>
+  <button class="tab" id="tab-settings" role="tab" data-screen="settings">
+    <svg class="tab-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3.2v2.3M12 18.5v2.3M20.8 12h-2.3M5.5 12H3.2M18.1 5.9l-1.6 1.6M7.5 16.6l-1.6 1.6M18.1 18.1l-1.6-1.6M7.5 7.4L5.9 5.9"/></svg>
+    Settings
+  </button>
 </nav>
 
+</div>
 <main>
 
   <!-- ───────────────────────── Stores ───────────────────────── -->
   <section class="screen is-active" id="screen-stores">
+    <h2>Stores</h2>
     <div class="toolbar">
       <input type="search" id="store-search" placeholder="Search stores" autocomplete="off">
       <button class="btn btn-primary" id="btn-add-store">+ Store</button>
@@ -39,6 +60,7 @@
 
   <!-- ───────────────────────── Targets ───────────────────────── -->
   <section class="screen" id="screen-targets">
+    <h2>Targets</h2>
     <div class="toolbar">
       <select id="target-view" aria-label="How to lay out the grid">
         <option value="by-month">One month, all stores</option>
@@ -124,67 +146,83 @@
   <section class="screen" id="screen-settings">
     <h2>Settings</h2>
 
-    <div class="field">
-      <label for="set-currency">Currency</label>
-      <input type="text" id="set-currency" maxlength="3" placeholder="GBP" autocomplete="off">
-      <p class="hint">One currency throughout, for formatting only — nothing is converted.</p>
-    </div>
+    <div class="settings-grid">
 
-    <h2>Sync</h2>
-    <div id="sync-out">
-      <p class="muted">
-        Sign in to keep this browser, your phone and Power BI looking at the same
-        numbers. Without it the app works exactly as it does now, on this device only.
-      </p>
-      <form id="sync-form" autocomplete="on">
-        <div class="row">
-          <div class="field">
-            <label for="sync-email">Email</label>
-            <input type="email" id="sync-email" autocomplete="username" required>
-          </div>
-          <div class="field">
-            <label for="sync-password">Password</label>
-            <input type="password" id="sync-password" autocomplete="current-password" required>
+      <div class="panel">
+        <h3>Currency</h3>
+        <div class="field">
+          <label for="set-currency">Currency</label>
+          <input type="text" id="set-currency" maxlength="3" placeholder="GBP" autocomplete="off">
+          <p class="hint">One currency throughout, for formatting only — nothing is converted.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Sync</h3>
+        <div id="sync-out">
+          <p class="muted">
+            Sign in to keep this browser, your phone and Power BI looking at the same
+            numbers. Without it the app works exactly as it does now, on this device only.
+          </p>
+          <form id="sync-form" autocomplete="on">
+            <div class="row">
+              <div class="field">
+                <label for="sync-email">Email</label>
+                <input type="email" id="sync-email" autocomplete="username" required>
+              </div>
+              <div class="field">
+                <label for="sync-password">Password</label>
+                <input type="password" id="sync-password" autocomplete="current-password" required>
+              </div>
+            </div>
+            <p class="error" id="sync-error" hidden></p>
+            <button class="btn btn-primary" type="submit" id="btn-sign-in">Sign in</button>
+          </form>
+        </div>
+        <div id="sync-in" hidden>
+          <p class="muted" id="sync-status"></p>
+          <p class="error" id="sync-error-in" hidden></p>
+          <div class="toolbar wrap">
+            <button class="btn" id="btn-sync-now">Sync now</button>
+            <button class="btn" id="btn-sign-out">Sign out</button>
           </div>
         </div>
-        <p class="error" id="sync-error" hidden></p>
-        <button class="btn btn-primary" type="submit" id="btn-sign-in">Sign in</button>
-      </form>
-    </div>
-    <div id="sync-in" hidden>
-      <p class="muted" id="sync-status"></p>
-      <p class="error" id="sync-error-in" hidden></p>
-      <div class="toolbar wrap">
-        <button class="btn" id="btn-sync-now">Sync now</button>
-        <button class="btn" id="btn-sign-out">Sign out</button>
       </div>
-    </div>
 
-    <h2>Export &amp; backup</h2>
-    <p class="muted" id="backup-note"></p>
-    <div class="toolbar wrap">
-      <button class="btn" id="btn-export-json">JSON backup</button>
-      <button class="btn" id="btn-export-stores">Stores CSV</button>
-      <button class="btn" id="btn-export-targets">Targets CSV</button>
-    </div>
-    <div class="field">
-      <label for="restore-file">Restore from a JSON backup</label>
-      <input type="file" id="restore-file" accept=".json">
-      <p class="hint">Merges rather than replaces — the newer version of each record wins.</p>
-    </div>
+      <div class="panel">
+        <h3>Export &amp; backup</h3>
+        <p class="muted" id="backup-note"></p>
+        <div class="toolbar wrap">
+          <button class="btn" id="btn-export-json">JSON backup</button>
+          <button class="btn" id="btn-export-stores">Stores CSV</button>
+          <button class="btn" id="btn-export-targets">Targets CSV</button>
+        </div>
+        <div class="field">
+          <label for="restore-file">Restore from a JSON backup</label>
+          <input type="file" id="restore-file" accept=".json">
+          <p class="hint">Merges rather than replaces — the newer version of each record wins.</p>
+        </div>
+      </div>
 
-    <h2>Storage</h2>
-    <p class="muted" id="storage-info"></p>
+      <div class="panel">
+        <h3>Storage</h3>
+        <p class="muted" id="storage-info"></p>
+      </div>
 
-    <h2 class="danger-h">Danger zone</h2>
-    <div class="toolbar">
-      <button class="btn btn-danger" id="btn-reset">Delete everything</button>
+      <div class="panel panel-danger" style="grid-column:1 / -1;">
+        <h3 class="danger-h">Danger zone</h3>
+        <div class="toolbar">
+          <button class="btn btn-danger" id="btn-reset">Delete everything</button>
+        </div>
+      </div>
+
     </div>
 
     <p class="muted" id="app-version"></p>
   </section>
 
 </main>
+</div>
 
 <!-- Store editor -->
 <dialog id="store-dialog">
@@ -270,7 +308,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="config.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="config.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

@@ -4,18 +4,24 @@
   --bg: #f6f7f9;
   --surface: #ffffff;
   --surface-2: #eef0f4;
+  --surface-3: #e2e5eb;
   --line: #d8dce4;
   --text: #14181f;
   --muted: #626b7a;
+  --muted-2: #98a0ae;
   --accent: #1f6feb;
   --accent-text: #ffffff;
+  --accent-dim: rgba(31, 111, 235, 0.10);
   --danger: #c0392b;
+  --danger-dim: rgba(192, 57, 43, 0.10);
   --warn-bg: #fff4d6;
   --warn-line: #e2b400;
   --warn-text: #6b4e00;
   --ok: #1a7f4b;
+  --ok-dim: rgba(26, 127, 75, 0.10);
   --radius: 10px;
   --gap: 12px;
+  --sidebar-w: 240px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,16 +29,21 @@
     --bg: #12151a;
     --surface: #1b1f27;
     --surface-2: #232833;
+    --surface-3: #2a303d;
     --line: #333b48;
     --text: #e6e9ef;
     --muted: #9aa4b4;
+    --muted-2: #6b7484;
     --accent: #4d94ff;
     --accent-text: #08111f;
+    --accent-dim: rgba(77, 148, 255, 0.14);
     --danger: #ff6b5c;
+    --danger-dim: rgba(255, 107, 92, 0.14);
     --warn-bg: #3a2f0d;
     --warn-line: #a98b16;
     --warn-text: #f0dc9a;
     --ok: #4cc98a;
+    --ok-dim: rgba(76, 201, 138, 0.14);
   }
 }
 
@@ -49,7 +60,15 @@ body {
 h1 { font-size: 1.15rem; margin: 0; letter-spacing: -0.01em; }
 h2 { font-size: 1rem; margin: 1.6em 0 0.5em; letter-spacing: -0.01em; }
 h2:first-child { margin-top: 0; }
+h3 { font-size: 0.92rem; margin: 0 0 4px; letter-spacing: -0.01em; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; background: var(--surface-2); padding: 0.1em 0.35em; border-radius: 4px; }
+
+/* ── shell ──────────────────────────────────────────────── */
+
+/* Mobile: .shell and .sidebar are transparent wrappers — topbar and tabs
+   stack exactly as they always have. Desktop turns the same two elements
+   into a fixed-width sidebar instead of moving anything in the DOM. */
+.shell { display: block; }
 
 /* ── chrome ─────────────────────────────────────────────── */
 
@@ -62,6 +81,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .topbar-main { display: flex; align-items: center; gap: 10px; }
 .topbar-sub { color: var(--muted); font-size: 0.8rem; margin-top: 2px; min-height: 1.1em; }
 
+.brand-mark { display: none; }
+
 .badge {
   font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
   background: var(--surface-2); color: var(--muted);
@@ -70,6 +91,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 
 .badge.is-warn { color: var(--danger); border-color: var(--danger); }
 .badge.is-ok { color: var(--ok); border-color: var(--ok); }
+
+.tabs-label { display: none; }
 
 .tabs {
   position: sticky; top: 0; z-index: 19;
@@ -83,12 +106,64 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
   font: inherit; font-size: 0.9rem; font-weight: 600;
   padding: 11px 10px; cursor: pointer;
   border-bottom: 2px solid transparent;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
 }
+.tab-icon { flex-shrink: 0; }
 .tab.is-active { color: var(--text); border-bottom-color: var(--accent); }
 
 main { padding: 14px; padding-bottom: max(env(safe-area-inset-bottom), 28px); max-width: 1100px; margin: 0 auto; }
 .screen { display: none; }
 .screen.is-active { display: block; }
+
+/* Desktop: fold the topbar and tabs into a real left sidebar. Nothing
+   moves in markup — only how these two elements are laid out changes. */
+@media (min-width: 900px) {
+  .shell { display: flex; align-items: stretch; min-height: 100vh; }
+
+  .sidebar {
+    width: var(--sidebar-w); flex: 0 0 var(--sidebar-w);
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--line);
+    background: var(--bg);
+  }
+
+  .topbar {
+    position: static; border-bottom: none;
+    padding: 20px 16px 10px;
+  }
+  .brand-mark {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+    background: var(--accent-dim); color: var(--accent);
+  }
+
+  .tabs-label {
+    display: block;
+    font-size: 0.68rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--muted-2); padding: 10px 18px 6px;
+  }
+
+  .tabs {
+    position: static; flex: 1; flex-direction: column; gap: 2px;
+    border-bottom: none; overflow-x: visible;
+    padding: 0 10px;
+  }
+  .tab {
+    justify-content: flex-start; text-align: left;
+    border-bottom: none; border-left: 3px solid transparent;
+    border-radius: 8px; padding: 9px 10px;
+    min-width: 0;
+  }
+  .tab.is-active {
+    background: var(--surface-2); border-bottom-color: transparent;
+    border-left-color: var(--accent);
+  }
+
+  main {
+    flex: 1; min-width: 0; max-width: none; margin: 0;
+    padding: 28px 32px;
+  }
+}
 
 /* ── controls ───────────────────────────────────────────── */
 
@@ -144,8 +219,23 @@ select { max-width: 100%; }
 .card-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .card-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem; color: var(--muted); }
 .card-name { font-weight: 600; }
-.card-meta { color: var(--muted); font-size: 0.82rem; margin-top: 3px; }
+.card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.card-meta .muted-bit { color: var(--muted); font-size: 0.82rem; }
 .card.is-closed { opacity: 0.55; }
+
+.status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--muted-2); }
+.status-dot.is-active { background: var(--ok); }
+.status-dot.is-pipeline { background: var(--warn-line); }
+.status-chip { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.82rem; }
+
+/* Desktop: a list of stores reads better as one column, each row scanned
+   left to right, than as a card grid. */
+@media (min-width: 900px) {
+  .cards { grid-template-columns: 1fr; }
+  .card { display: flex; align-items: center; gap: 16px; padding: 10px 14px; }
+  .card-top { flex: 0 0 240px; flex-direction: column; align-items: flex-start; gap: 1px; }
+  .card-meta { flex: 1; margin-top: 0; }
+}
 
 .empty { text-align: center; color: var(--muted); padding: 44px 16px; font-size: 0.9rem; }
 
@@ -157,7 +247,7 @@ select { max-width: 100%; }
 .grid thead th {
   position: sticky; top: 0; background: var(--surface-2); z-index: 2;
   padding: 8px 10px; font-size: 0.75rem; text-transform: uppercase;
-  letter-spacing: 0.03em; color: var(--muted); white-space: nowrap;
+  letter-spacing: 0.03em; color: var(--muted-2); white-space: nowrap;
 }
 .grid th.k, .grid td.k {
   text-align: left; position: sticky; left: 0; background: var(--surface); z-index: 1;
@@ -174,7 +264,7 @@ select { max-width: 100%; }
 .grid input:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--surface); }
 .grid td.var { padding: 8px 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .grid td.var.off { background: var(--warn-bg); color: var(--warn-text); font-weight: 600; }
-.grid td.var.ok { color: var(--ok); }
+.grid td.var.ok { color: var(--ok); font-weight: 600; }
 .grid tfoot td { padding: 8px 10px; font-weight: 600; background: var(--surface-2); font-variant-numeric: tabular-nums; }
 .grid tfoot td.k { background: var(--surface-2); }
 
@@ -194,12 +284,25 @@ select { max-width: 100%; }
 .preview-wrap { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; }
 .preview { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
 .preview th, .preview td { padding: 6px 9px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
-.preview thead th { position: sticky; top: 0; background: var(--surface-2); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+.preview thead th { position: sticky; top: 0; background: var(--surface-2); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted-2); }
 .preview td.was { color: var(--muted); text-decoration: line-through; }
 .preview tr.row-add td:first-child { border-left: 3px solid var(--ok); }
 .preview tr.row-chg td:first-child { border-left: 3px solid var(--warn-line); }
 .preview tr.row-bad td:first-child { border-left: 3px solid var(--danger); }
 .preview .why { color: var(--danger); white-space: normal; min-width: 220px; }
+
+/* ── settings panels ────────────────────────────────────── */
+
+.settings-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+.panel {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px 18px;
+}
+.panel-danger { border-color: var(--danger); }
+
+@media (min-width: 640px) {
+  .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 /* ── dialog ─────────────────────────────────────────────── */
 

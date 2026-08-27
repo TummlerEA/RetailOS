@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 12;
+  var VERSION = 13;
 
   var K = {
     stores:   "retailos-stores",
@@ -1850,14 +1850,18 @@
       top.appendChild(el("span", "card-id", store.storeId));
       card.appendChild(top);
 
-      var bits = [];
-      if (store.storeBrand) bits.push(store.storeBrand);
-      if (store.storeChannel) bits.push(store.storeChannel);
-      if (store.storeManager) bits.push(store.storeManager);
-      if (store.country) bits.push(store.country);
-      if (store.status === "closed") bits.push("Closed");
-      if (store.status === "pipeline") bits.push("Pipeline");
-      card.appendChild(el("div", "card-meta", bits.join(" · ") || "—"));
+      var meta = el("div", "card-meta");
+      if (store.storeBrand) meta.appendChild(el("span", "badge", store.storeBrand));
+      if (store.storeChannel) meta.appendChild(el("span", "badge", store.storeChannel));
+      if (store.storeManager) meta.appendChild(el("span", "muted-bit", store.storeManager));
+      if (store.country) meta.appendChild(el("span", "muted-bit", store.country));
+      var statusChip = el("span", "status-chip");
+      statusChip.appendChild(el("span", "status-dot" + (store.status === "active" ? " is-active"
+        : store.status === "pipeline" ? " is-pipeline" : "")));
+      statusChip.appendChild(document.createTextNode(store.status === "closed" ? "Closed"
+        : store.status === "pipeline" ? "Pipeline" : "Active"));
+      meta.appendChild(statusChip);
+      card.appendChild(meta);
 
       card.addEventListener("click", function () { openStore(store.storeId); });
       host.appendChild(card);
