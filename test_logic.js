@@ -191,31 +191,31 @@ eq("date rubbish", app.cleanDate("soon"), "");
 /* ── building rows from a sheet ── */
 
 group("building rows");
-var storeItems = app.buildStoreRows(storesSheet, app.detectLayout(storesSheet, null));
+var storeItems = app.buildStoreRows(storesSheet, app.detectLayout(storesSheet, null)).items;
 eq("one store built", storeItems.filter(function (i) { return i.row; }).length, 1);
 eq("id read", storeItems[0].row.storeId, "S001");
 eq("channel tidied", storeItems[0].row.storeChannel, "Retail");
 
 var nameless = app.buildStoreRows([["Store ID", "Store Name", "Manager"], ["S009", "", "X"]],
-  app.detectLayout([["Store ID", "Store Name", "Manager"], ["S009", "", "X"]], null));
+  app.detectLayout([["Store ID", "Store Name", "Manager"], ["S009", "", "X"]], null)).items;
 ok("a store with no name is rejected", !!nameless[0].bad);
 
 var branded = [["Store ID", "Store Name", "Fascia", "Channel"],
                ["S010", "Bicester", "Levi's", "Outlet"]];
-var brandedRow = app.buildStoreRows(branded, app.detectLayout(branded, null))[0].row;
+var brandedRow = app.buildStoreRows(branded, app.detectLayout(branded, null)).items[0].row;
 eq("a Fascia column is read as the brand", brandedRow.storeBrand, "Levis");
 eq("and the channel is still its own thing", brandedRow.storeChannel, "Outlet");
 
 var located = [["Store ID", "Store Name", "Address", "Lat", "Long"],
                ["S007", "Tverskaya", "12 Tverskaya St", "55.7446675", "37.5658937"]];
-var locatedRow = app.buildStoreRows(located, app.detectLayout(located, null))[0].row;
+var locatedRow = app.buildStoreRows(located, app.detectLayout(located, null)).items[0].row;
 eq("Lat is recognised as latitude", locatedRow.latitude, "55.7446675");
 eq("Long is recognised as longitude", locatedRow.longitude, "37.5658937");
 eq("and the address comes with it", locatedRow.address, "12 Tverskaya St");
 
 var swapped = [["Store ID", "Store Name", "Latitude", "Longitude"],
                ["S008", "Somewhere", "137.5", "137.5"]];
-var swappedRow = app.buildStoreRows(swapped, app.detectLayout(swapped, null))[0].row;
+var swappedRow = app.buildStoreRows(swapped, app.detectLayout(swapped, null)).items[0].row;
 eq("a latitude past the pole is left out", swappedRow.latitude, undefined);
 eq("while the same number is a valid longitude", swappedRow.longitude, "137.5");
 
@@ -338,7 +338,7 @@ var ruStores = [
 var ruStoreLayout = app.detectLayout(ruStores, null);
 eq("a Russian store sheet is recognised", ruStoreLayout.kind, "stores");
 eq("with every column understood", ruStoreLayout.ignored.length, 0);
-var ruStore = app.buildStoreRows(ruStores, ruStoreLayout)[0].row;
+var ruStore = app.buildStoreRows(ruStores, ruStoreLayout).items[0].row;
 eq("the ID", ruStore.storeId, "0Ц-000018");
 eq("the name is kept in its own alphabet", ruStore.storeName, "JNS МОС Авиапарк");
 eq("Найк becomes the brand we store", ruStore.storeBrand, "Nike");
@@ -471,6 +471,27 @@ eq("nor is an empty cell", app.matchBrand(""), "");
 // The two are different questions about the same store.
 ok("brand is not a channel", app.CHANNELS.indexOf("Nike") < 0);
 ok("and a channel is not a brand", app.BRANDS.indexOf("Outlet") < 0);
+
+/* ── a value outside the vocabulary ── */
+
+group("unknown channel or brand");
+var offList = [["Store ID", "Store Name", "Channel", "Brand"],
+               ["S020", "Aviapark", "Nike", "Nike"]];
+var offBuilt = app.buildStoreRows(offList, app.detectLayout(offList, null));
+var offRow = offBuilt.items[0].row;
+eq("the store still comes in", offRow.storeId, "S020");
+eq("the brand is understood", offRow.storeBrand, "Nike");
+// A brand is not a channel. Writing it through was how store_channel came
+// to hold brand names, which the database then refused at sync time.
+eq("a brand sitting in the channel column is left blank", offRow.storeChannel, "");
+ok("and the import says so",
+   !!offBuilt.notes["values were not a channel this app knows, and were left blank"]);
+
+var goodPair = [["Store ID", "Store Name", "Channel", "Brand"], ["S021", "Bicester", "Outlet", "Levis"]];
+var goodBuilt = app.buildStoreRows(goodPair, app.detectLayout(goodPair, null));
+eq("a real channel is kept", goodBuilt.items[0].row.storeChannel, "Outlet");
+eq("alongside its brand", goodBuilt.items[0].row.storeBrand, "Levis");
+eq("with nothing to report", JSON.stringify(goodBuilt.notes), "{}");
 
 /* ── coordinates ── */
 

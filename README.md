@@ -15,7 +15,10 @@ Everything is on one screen's worth of tabs: **Stores**, **Targets**,
   over the door (Multi, Asics, Under Armour, Levis, Nike); channel is how the
   store trades (Retail, Outlet, Concession, Franchise, Ecommerce, Pop-up).
   They are deliberately two fields: the same brand can be full-price in one
-  place and an outlet in another, and both slices get asked for. The store ID is
+  place and an outlet in another, and both slices get asked for. A value
+  outside either vocabulary is left blank and counted in the preview rather
+  than written through — the database refuses those, and a sync failing on a
+  constraint says nothing about which spreadsheet cell caused it. The store ID is
   the join key everything else hangs off, so it is fixed once a store exists
   and cannot be retyped. Coordinates are kept as text so the precision given
   survives exactly, but only a real coordinate is accepted — both the

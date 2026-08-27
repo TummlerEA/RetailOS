@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 9;
+  var VERSION = 10;
 
   var K = {
     stores:   "retailos-stores",
@@ -1498,6 +1498,22 @@
   function buildStoreRows(rows, layout) {
     var out = [];
     var known = {};
+    var notes = {};
+
+    // A channel or brand outside its vocabulary used to be written through
+    // as typed. The database refuses those, so the import looked fine and
+    // the sync failed later with a constraint error nowhere near the cause.
+    // Left blank and counted instead: the store still comes in, and the
+    // preview says how many need a value choosing.
+    function fromVocabulary(key, raw, matched) {
+      if (matched) return matched;
+      var text = cleanText(raw);
+      if (!text) return "";
+      var label = key === "storeChannel" ? "channel" : "brand";
+      var note = 'values were not a ' + label + ' this app knows, and were left blank';
+      notes[note] = (notes[note] || 0) + 1;
+      return "";
+    }
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r] || [];
       var id = cleanText(row[layout.storeIdCol]);
@@ -1520,8 +1536,8 @@
           var coord = cleanCoordinate(raw, key === "latitude" ? 90 : 180);
           if (coord !== null) record[key] = coord;
         }
-        else if (key === "storeChannel") record[key] = matchChannel(raw) || cleanText(raw);
-        else if (key === "storeBrand") record[key] = matchBrand(raw) || cleanText(raw);
+        else if (key === "storeChannel") record[key] = fromVocabulary(key, raw, matchChannel(raw));
+        else if (key === "storeBrand") record[key] = fromVocabulary(key, raw, matchBrand(raw));
         else if (key === "status") record[key] = normaliseStatus(raw);
         else record[key] = cleanText(raw);
       });
@@ -1529,7 +1545,7 @@
       if (!record.storeName) { out.push({ bad: "Store " + id + " has no name", raw: id }); continue; }
       out.push({ row: record });
     }
-    return out;
+    return { items: out, notes: notes };
   }
 
   function normaliseStatus(raw) {
@@ -2236,8 +2252,9 @@
 
     var summary, diff, notes = {};
     if (layout.kind === "stores") {
-      var storeItems = buildStoreRows(rows, layout);
-      diff = diffStores(storeItems);
+      var storesBuilt = buildStoreRows(rows, layout);
+      diff = diffStores(storesBuilt.items);
+      notes = storesBuilt.notes;
       summary = "Read as a store list — " + (rows.length - 1) + " rows.";
     } else {
       var built = buildTargetRows(rows, layout, year, $("import-metric").value,
