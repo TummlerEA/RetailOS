@@ -91,6 +91,19 @@ deliberately strict about what it means:
   design; row-level security and disabled self-signup are the protection.
 - `storeManager` holds a name only. No emails, no phone numbers.
 
+## Working from two places
+
+This repo is worked on both from a Claude Code session in the cloud and from
+VS Code on the owner's machine, on the same branch. The cloud container
+cannot reach `supabase.co` — Playwright and the browser tests work there,
+but the app cannot sign in or sync, so that last mile is tested locally.
+
+Both sides therefore follow the same rule: **pull before starting, push when
+done, never leave work uncommitted.** The version bump touches `VERSION`,
+three `?v=` and `version.json` on nearly every commit, so two unsynced
+branches conflict immediately rather than subtly — which is the good case,
+but only if both sides pull first.
+
 ## Tests
 
     node test_logic.js      # no browser needed
