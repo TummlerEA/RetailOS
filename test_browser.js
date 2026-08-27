@@ -99,6 +99,11 @@ function fakeServer() {
     if ((options.method || "GET") === "GET") return reply(200, db[table]);
 
     var rows = JSON.parse(options.body || "[]");
+    // db.slow holds the first write open. A change made in that window has
+    // missed this round's push selection entirely, which is the case being
+    // tested: it is owed a round of its own.
+    var hold = 0;
+    if (db.slow) { db.slow = false; hold = 900; }
     var idOf = table === "stores"
       ? function (r) { return r.store_id; }
       : function (r) { return r.store_id + "|" + r.month; };
@@ -109,7 +114,10 @@ function fakeServer() {
       if (at >= 0) db[table][at] = row; else db[table].push(row);
     });
     write(db);
-    return reply(201, null);
+    if (!hold) return reply(201, null);
+    return new Promise(function (resolve) {
+      setTimeout(function () { resolve(reply(201, null)); }, hold);
+    });
   };
 }
 
@@ -691,6 +699,41 @@ function run() {
       var edited = sent.filter(function (r) { return r.store_manager === "Edited After Signin"; });
       eq("an edit made while signed in reaches the server by itself", edited.length, 1);
       eq("and only the row that changed is sent", sent.length, 1);
+    })
+
+    /* a write that lands while a sync is running must not be lost */
+    .then(function () {
+      return page.evaluate(function () {
+        var db = JSON.parse(localStorage.getItem("__fake_server"));
+        db.pushes = [];
+        db.slow = true;                 // hold the first write open
+        localStorage.setItem("__fake_server", JSON.stringify(db));
+      });
+    })
+    // First edit: gives the coming round something to push, so the hold on
+    // that push actually engages.
+    .then(function () { return page.click('.tab[data-screen="stores"]'); })
+    .then(function () { return page.click('#store-list .card:has-text("S004")'); })
+    .then(function () { return page.fill("#f-storeManager", "First Edit"); })
+    .then(function () { return page.click('#store-form button[type="submit"]'); })
+    // The round starts 1.5s after that write and then holds on its push.
+    .then(function () { return page.waitForTimeout(1900); })
+    // Second edit, landing inside that held push — after this round already
+    // decided what to send. Dropping its sync is what lost whole imports.
+    .then(function () { return page.click('#store-list .card:has-text("S005")'); })
+    .then(function () { return page.fill("#f-storeManager", "Edited Mid Sync"); })
+    .then(function () { return page.click('#store-form button[type="submit"]'); })
+    .then(function () { return page.waitForTimeout(4000); })
+    .then(function () {
+      return page.evaluate(function () { return JSON.parse(localStorage.getItem("__fake_server")); });
+    })
+    .then(function (db) {
+      var sent = [];
+      db.pushes.forEach(function (p) { if (p.table === "stores") sent.push.apply(sent, p.rows); });
+      eq("the edit before the sync reaches the server",
+         sent.filter(function (r) { return r.store_manager === "First Edit"; }).length > 0, true);
+      eq("and so does one made while that sync was still pushing",
+         sent.filter(function (r) { return r.store_manager === "Edited Mid Sync"; }).length, 1);
     })
 
     /* signing out leaves the data alone */

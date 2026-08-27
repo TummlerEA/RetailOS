@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 6;
+  var VERSION = 7;
 
   var K = {
     stores:   "retailos-stores",
@@ -800,20 +800,34 @@
   var Sync = {
     inFlight: null,
     pending: null,
+    owed: false,
     lastError: "",
     lastSyncedAt: "",
 
     // Called after every local write. Waits a moment so that typing a row
-    // of six targets is one sync rather than six, and does nothing at all
-    // while a sync is already running — the merge writes locally too, and
-    // that must not start another round.
+    // of six targets is one sync rather than six.
+    //
+    // A write that lands while a sync is already running cannot join it —
+    // that round has already decided what to push. It must not be dropped
+    // either: doing so lost whole imports, because applying one import
+    // starts a sync and applying the next a second later fell inside it.
+    // So it is remembered, and another round runs when this one ends.
     schedule: function () {
-      if (!Remote.signedIn() || Sync.inFlight) return;
+      if (!Remote.signedIn()) return;
+      if (Sync.inFlight) { Sync.owed = true; return; }
       if (Sync.pending) clearTimeout(Sync.pending);
       Sync.pending = setTimeout(function () {
         Sync.pending = null;
         Sync.now().catch(function () { /* the error is already on the screen */ });
       }, 1500);
+    },
+
+    // The merge inside a sync writes locally through the adapter rather
+    // than through saved(), so it never owes itself a round.
+    settle: function () {
+      if (!Sync.owed) return;
+      Sync.owed = false;
+      Sync.schedule();
     },
 
     now: function () {
@@ -849,11 +863,15 @@
         Sync.lastSyncedAt = nowIso();
         Sync.inFlight = null;
         onSyncStateChanged(result);
+        Sync.settle();
         return result;
       }, function (e) {
         Sync.lastError = e && e.message ? e.message : String(e);
         Sync.inFlight = null;
         onSyncStateChanged();
+        // Still owed even though this round failed: the next one carries
+        // both its changes and these.
+        Sync.settle();
         throw e;
       });
 
