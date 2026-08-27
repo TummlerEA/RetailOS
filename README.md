@@ -33,7 +33,10 @@ Everything is on one screen's worth of tabs: **Stores**, **Targets**,
   `Код магазина`, `Бренд`, `Широта` — and so do the values inside them, so
   `Розница` becomes Retail and `Действующий` becomes active. `Средний чек`
   is deliberately not treated as ASP: it is the average transaction value,
-  which is ASP x UPT. Nothing is written until a preview has shown exactly what would
+  which is ASP x UPT. A store name sitting next to a store ID is treated as
+  a check on it: if the two disagree the row is held back and the preview
+  says which store that ID really is. A targets file carrying only a name
+  still loads, as long as the name picks out exactly one store. Nothing is written until a preview has shown exactly what would
   change.
 - **Export.** A JSON backup, and two flat CSVs shaped for Power BI.
 - **Sync.** Sign in and the same data is on the laptop, the phone and in

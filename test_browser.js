@@ -458,6 +458,32 @@ function run() {
       near("SOT read past its spaces and comma", august.sot, 1511);
     })
 
+    /* ── the name column catches a mis-keyed ID ── */
+    .then(function () {
+      console.log("name check");
+      return page.click('.tab[data-screen="import"]');
+    })
+    .then(function () { return page.selectOption("#import-kind", "targets"); })
+    .then(function () {
+      // Второй row has 000018's ID against 000019's name — the exact slip
+      // the name column is in the file to catch.
+      return page.fill("#import-paste", [
+        "month\tstore_id\tstore_name\tsales",
+        "01.09.2026\t0Ц-000018\tJNS МОС Авиапарк\t1000000",
+        "01.09.2026\t0Ц-000018\tJNS МОС Атриум\t2000000"
+      ].join("\n"));
+    })
+    .then(function () { return page.click("#btn-parse"); })
+    .then(function () { return page.waitForTimeout(200); })
+    .then(function () { return tally(page, "add"); })
+    .then(function (count) { eq("only the row whose name agrees is offered", count, 1); })
+    .then(function () { return page.locator("#import-report").textContent(); })
+    .then(function (text) {
+      ok("and the mismatch is explained in the preview",
+         /is "JNS МОС Авиапарк" in the store list, not "JNS МОС Атриум"/.test(text), text.slice(0, 300));
+      return page.click("#btn-clear-import");
+    })
+
     /* ── brand, kept apart from channel ── */
     .then(function () {
       console.log("brand");

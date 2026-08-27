@@ -218,7 +218,7 @@ var swappedRow = app.buildStoreRows(swapped, app.detectLayout(swapped, null))[0]
 eq("a latitude past the pole is left out", swappedRow.latitude, undefined);
 eq("while the same number is a valid longitude", swappedRow.longitude, "137.5");
 
-var known = { S001: true };
+var known = app.storeIndex([{ storeId: "S001", storeName: "Oxford Street" }]);
 var built = app.buildTargetRows(longSheet, longLayout, null, null, known);
 eq("one store-month built", built.items.filter(function (i) { return i.row; }).length, 1);
 near("sales read", built.items[0].row.sales, 182000);
@@ -289,7 +289,8 @@ eq("nothing in the header is ignored", realLayout.ignored.length, 0);
 ok("even though traffic is spelled trafic", realLayout.metricCols.traffic === 4);
 
 var realBuilt = app.buildTargetRows(realRows, realLayout, null, null,
-  { "0Ц-000018": true, "0Ц-000019": true });
+  app.storeIndex([{ storeId: "0Ц-000018", storeName: "JNS МОС Авиапарк" },
+                   { storeId: "0Ц-000019", storeName: "JNS МОС Атриум" }]));
 eq("both rows come in", realBuilt.items.filter(function (i) { return i.row; }).length, 2);
 var first = realBuilt.items[0].row;
 eq("a Cyrillic store ID survives intact", first.storeId, "0Ц-000018");
@@ -315,7 +316,7 @@ var ruTargets = [
 var ruLayout = app.detectLayout(ruTargets, null);
 eq("a wholly Russian header row reads as targets", ruLayout.kind, "targets-long");
 eq("and nothing in it is ignored", ruLayout.ignored.length, 0);
-var ruRow = app.buildTargetRows(ruTargets, ruLayout, null, null, { "0Ц-000018": true }).items[0].row;
+var ruRow = app.buildTargetRows(ruTargets, ruLayout, null, null, app.storeIndex([{ storeId: "0Ц-000018", storeName: "JNS МОС Авиапарк" }])).items[0].row;
 eq("Месяц is the month", ruRow.month, "2026-08");
 near("Продажи is sales", ruRow.sales, 15112500);
 near("Трафик is traffic", ruRow.traffic, 10000);
@@ -349,6 +350,50 @@ near("Площадь is the sales area", ruStore.salesArea, 320);
 // The English spellings must still win where both could apply.
 eq("English headers are untouched by any of this",
    app.detectLayout([["month", "store_id", "sales"], ["01.08.2026", "S1", "1"]], null).kind, "targets-long");
+
+/* ── the store name as a check on the store ID ── */
+
+group("name against ID");
+var twoStores = app.storeIndex([
+  { storeId: "0Ц-000018", storeName: "JNS МОС Авиапарк" },
+  { storeId: "0Ц-000019", storeName: "JNS МОС Атриум" }
+]);
+function targetsWith(idCell, nameCell) {
+  var rows = [["month", "store_id", "store_name", "sales"],
+              ["01.08.2026", idCell, nameCell, "1000"]];
+  return app.buildTargetRows(rows, app.detectLayout(rows, null), null, null, twoStores).items[0];
+}
+
+ok("a matching name lets the row through", !!targetsWith("0Ц-000018", "JNS МОС Авиапарк").row);
+ok("case and spacing differences are not a mismatch", !!targetsWith("0Ц-000018", "jns  мос авиапарк").row);
+
+// The whole reason the name column is in the file: catching a mis-keyed ID.
+var swapped = targetsWith("0Ц-000018", "JNS МОС Атриум");
+ok("a name belonging to a different store stops the row", !!swapped.bad);
+ok("and the message names both, so it is obvious which is wrong",
+   /0Ц-000018/.test(swapped.bad) && /Авиапарк/.test(swapped.bad) && /Атриум/.test(swapped.bad), swapped.bad);
+
+var unknownName = targetsWith("0Ц-000018", "Somewhere Else");
+ok("a name matching no store at all also stops the row", !!unknownName.bad);
+
+/* ── a file with only a name ── */
+
+group("name as the key");
+function byNameOnly(nameCell, index) {
+  var rows = [["month", "store_name", "sales"], ["01.08.2026", nameCell, "1000"]];
+  return app.buildTargetRows(rows, app.detectLayout(rows, null), null, null, index).items[0];
+}
+eq("a unique name stands in for the ID", byNameOnly("JNS МОС Атриум", twoStores).row.storeId, "0Ц-000019");
+ok("an unknown name is refused", !!byNameOnly("Nowhere", twoStores).bad);
+
+// Two stores sharing a name is not something to resolve by guessing.
+var ambiguous = app.storeIndex([
+  { storeId: "A1", storeName: "Central" },
+  { storeId: "A2", storeName: "Central" }
+]);
+var clash = byNameOnly("Central", ambiguous);
+ok("a name shared by two stores is refused", !!clash.bad);
+ok("and says to add an ID column", /store ID column/.test(clash.bad), clash.bad);
 
 /* ── brands ── */
 

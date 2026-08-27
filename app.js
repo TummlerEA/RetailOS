@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 7;
+  var VERSION = 8;
 
   var K = {
     stores:   "retailos-stores",
@@ -1513,10 +1513,28 @@
     return row.map(cleanText).filter(Boolean).slice(0, 3).join(" · ") || "(blank)";
   }
 
-  function buildTargetRows(rows, layout, defaultYear, chosenMetric, storeIds) {
+  // The store list, indexed both ways: by ID to check a target's key and
+  // to look its name up, and by name for files that carry only a name.
+  function storeIndex(list) {
+    var byId = {};
+    var byName = {};
+    (list || []).forEach(function (store) {
+      if (!store || !store.storeId) return;
+      byId[store.storeId] = store.storeName || "";
+      var norm = normHeader(store.storeName);
+      if (!norm) return;
+      if (!byName[norm]) byName[norm] = [];
+      byName[norm].push(store.storeId);
+    });
+    return { byId: byId, byName: byName };
+  }
+
+  function buildTargetRows(rows, layout, defaultYear, chosenMetric, stores) {
     var out = [];
     var seen = {};
     var notes = {};
+    var index = stores && stores.byId ? stores : storeIndex([]);
+    var nameCol = layout.storeFieldCols ? layout.storeFieldCols.storeName : undefined;
 
     function record(storeId, month, metricKey, raw, label) {
       var read = readMetric(metricKey, raw);
@@ -1531,15 +1549,47 @@
     for (var r = 1; r < rows.length; r++) {
       var row = rows[r] || [];
       var id = layout.storeIdCol >= 0 ? cleanText(row[layout.storeIdCol]) : "";
+      var named = nameCol !== undefined ? cleanText(row[nameCol]) : "";
+
+      // A file with no ID column can still be placed, as long as the name
+      // picks out exactly one store. Two stores sharing a name is not
+      // something to resolve by guessing.
+      if (!id && named) {
+        var byName = index.byName[normHeader(named)] || [];
+        if (byName.length === 1) {
+          id = byName[0];
+        } else if (byName.length > 1) {
+          out.push({ bad: 'More than one store is called "' + named + '" — the file needs a store ID column', raw: describeRow(row) });
+          continue;
+        } else {
+          out.push({ bad: 'No store called "' + named + '" in the store list', raw: describeRow(row) });
+          continue;
+        }
+      }
+
       if (!id) {
         if (row.some(function (c) { return cleanText(c) !== ""; })) {
           out.push({ bad: "No store ID on this row", raw: describeRow(row) });
         }
         continue;
       }
-      if (!storeIds[id]) {
+      if (!Object.prototype.hasOwnProperty.call(index.byId, id)) {
         out.push({ bad: "Store " + id + " is not in the store list — import stores first", raw: describeRow(row) });
         continue;
+      }
+
+      // Both an ID and a name: the name is there to catch a mis-keyed ID,
+      // so a disagreement stops the row rather than being written. Compared
+      // loosely, so case, spacing and punctuation do not raise false alarms.
+      if (named && layout.storeIdCol >= 0) {
+        var onFile = index.byId[id];
+        if (onFile && normHeader(onFile) !== normHeader(named)) {
+          out.push({
+            bad: 'Store ' + id + ' is "' + onFile + '" in the store list, not "' + named + '"',
+            raw: describeRow(row)
+          });
+          continue;
+        }
       }
 
       if (layout.kind === "targets-wide") {
@@ -2134,9 +2184,8 @@
       diff = diffStores(storeItems);
       summary = "Read as a store list — " + (rows.length - 1) + " rows.";
     } else {
-      var storeIds = {};
-      Data.liveStores().forEach(function (s) { storeIds[s.storeId] = true; });
-      var built = buildTargetRows(rows, layout, year, $("import-metric").value, storeIds);
+      var built = buildTargetRows(rows, layout, year, $("import-metric").value,
+                                  storeIndex(Data.liveStores()));
       diff = diffTargets(built.items);
       notes = built.notes;
       summary = layout.kind === "targets-wide"
@@ -2668,7 +2717,7 @@
       detectLayout: detectLayout, buildStoreRows: buildStoreRows, buildTargetRows: buildTargetRows,
       readMetric: readMetric, matchChannel: matchChannel, normaliseStatus: normaliseStatus,
       cleanDate: cleanDate, impliedSales: impliedSales, impliedSot: impliedSot, checksFor: checksFor,
-      readWorkbook: readWorkbook, mergeById: mergeById,
+      readWorkbook: readWorkbook, mergeById: mergeById, storeIndex: storeIndex,
       storeToRemote: storeToRemote, storeFromRemote: storeFromRemote,
       targetToRemote: targetToRemote, targetFromRemote: targetFromRemote,
       newerHere: newerHere, authMessage: authMessage, restMessage: restMessage,
