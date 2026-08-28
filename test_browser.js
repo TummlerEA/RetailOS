@@ -196,9 +196,9 @@ function run() {
       return page.click("#import-report .btn-primary");
     })
     .then(function () { return page.waitForSelector("#screen-stores.is-active"); })
-    .then(function () { return page.locator("#store-list .card").count(); })
+    .then(function () { return page.locator("#store-list .store-row").count(); })
     .then(function (count) {
-      eq("five store cards appear", count, 5);
+      eq("five store rows appear", count, 5);
       return stored(page, "retailos-stores");
     })
     .then(function (stores) {
@@ -400,7 +400,7 @@ function run() {
       console.log("editing");
       return page.click("#tab-stores");
     })
-    .then(function () { return page.click("#store-list .card >> nth=0"); })
+    .then(function () { return page.click('#store-list .store-row:has-text("S001")'); })
     .then(function () { return page.locator("#f-storeId").isEditable(); })
     .then(function (editable) {
       ok("the ID of an existing store cannot be retyped", !editable);
@@ -497,7 +497,7 @@ function run() {
     .then(function () {
       console.log("brand");
       return page.click('.tab[data-screen="stores"]')
-        .then(function () { return page.click('#store-list .card:has-text("S002")'); });
+        .then(function () { return page.click('#store-list .store-row:has-text("S002")'); });
     })
     .then(function () { return page.locator("#f-storeBrand option").allTextContents(); })
     .then(function (options) {
@@ -520,22 +520,105 @@ function run() {
     // so this is the other half of the Cyrillic fix: before it, a Russian
     // query reduced to an empty string and matched every store.
     .then(function () { return page.fill("#store-search", "Авиапарк"); })
-    .then(function () { return page.locator("#store-list .card").count(); })
+    .then(function () { return page.locator("#store-list .store-row").count(); })
     .then(function (count) {
       eq("searching by a Russian store name filters rather than matching all", count, 1);
       return page.fill("#store-search", "");
     })
     .then(function () { return page.fill("#store-search", "Under Armour"); })
-    .then(function () { return page.locator("#store-list .card").count(); })
+    .then(function () { return page.locator("#store-list .store-row").count(); })
     .then(function (count) {
       eq("searching by brand finds it", count, 1);
       return page.fill("#store-search", "");
     })
 
+    /* ── the list itself: sections, rail, grouping, sorting ── */
+    // Every fixture store imports as Trading, so give the list something
+    // that is not trading before asking how it splits them up.
+    .then(function () {
+      console.log("store list");
+      return page.click('#store-list .store-row:has-text("S005")');
+    })
+    .then(function () { return page.selectOption("#f-status", "closed"); })
+    .then(function () { return page.click('#store-form button[type="submit"]'); })
+    .then(function () { return page.click('#store-list .store-row:has-text("S004")'); })
+    .then(function () { return page.selectOption("#f-status", "pipeline"); })
+    .then(function () { return page.click('#store-form button[type="submit"]'); })
+    .then(function () { return page.locator("#store-list .sec").count(); })
+    .then(function (count) {
+      eq("what is not trading splits off into its own section", count, 2);
+      return page.locator("#store-list .sec").nth(1).locator(".store-row").count();
+    })
+    .then(function (count) {
+      eq("closed and pipeline share it", count, 2);
+      return page.locator("#store-list .sec").nth(1).evaluate(function (n) { return n.open; });
+    })
+    .then(function (open) {
+      eq("and it stays shut until it is asked for", open, false);
+      return page.click('#store-filters .frow:has-text("Concession")');
+    })
+    .then(function () { return page.locator("#store-list .store-row").count(); })
+    .then(function (count) {
+      eq("picking a channel in the rail filters the list", count, 1);
+      return page.locator("#store-count").textContent();
+    })
+    .then(function (text) {
+      ok("and the count owns up to what it left out", /^1 of \d+ stores$/.test(text), text);
+      return page.locator("#store-list .store-row").count();
+    })
+    .then(function (filtered) {
+      return page.click('#store-filters .frow:has-text("Concession")')
+        .then(function () { return page.locator("#store-list .store-row").count(); })
+        .then(function (count) {
+          ok("picking the same one again clears it", count > filtered, count + " vs " + filtered);
+        });
+    })
+    .then(function () { return page.selectOption("#store-group", "channel"); })
+    .then(function () {
+      // Every row must sit under a heading that names its own channel —
+      // which is the whole claim grouping makes.
+      return page.evaluate(function () {
+        var heading = null, headings = 0, misfiled = 0;
+        document.querySelectorAll("#store-list .sec")[0].querySelectorAll("tbody tr").forEach(function (tr) {
+          if (tr.classList.contains("group-row")) { heading = tr.textContent.trim(); headings++; return; }
+          var channel = tr.children[3].textContent.trim();
+          var want = channel === "—" ? "No channel" : channel;
+          if (want !== heading) misfiled++;
+        });
+        return { headings: headings, misfiled: misfiled };
+      });
+    })
+    .then(function (result) {
+      eq("grouping by channel files every row under its own channel", result.misfiled, 0);
+      ok("and there is a heading per channel, not one for the lot", result.headings > 1, result.headings);
+      return page.selectOption("#store-group", "none");
+    })
+    .then(function () { return page.selectOption("#store-sort", "id"); })
+    .then(function () {
+      return page.locator("#store-list .sec").nth(0).locator(".store-id").allTextContents();
+    })
+    .then(function (ids) {
+      var sorted = ids.slice().sort(function (a, b) {
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+      });
+      eq("sorting by store ID orders by it", ids.join(","), sorted.join(","));
+      return page.selectOption("#store-sort", "name");
+    })
+    // Hand both back as trading, so the sync tests below can still reach them.
+    .then(function () { return page.click("#store-list .sec >> nth=1 >> summary"); })
+    .then(function () { return page.click('#store-list .store-row:has-text("S005")'); })
+    .then(function () { return page.selectOption("#f-status", "active"); })
+    .then(function () { return page.click('#store-form button[type="submit"]'); })
+    .then(function () { return page.click('#store-list .store-row:has-text("S004")'); })
+    .then(function () { return page.selectOption("#f-status", "active"); })
+    .then(function () { return page.click('#store-form button[type="submit"]'); })
+    .then(function () { return page.locator("#store-list .sec").count(); })
+    .then(function (count) { eq("and putting them back leaves one section", count, 1); })
+
     /* ── address and coordinates ── */
     .then(function () {
       console.log("location");
-      return page.click('#store-list .card:has-text("S003")');
+      return page.click('#store-list .store-row:has-text("S003")');
     })
     .then(function () { return page.fill("#f-address", "12 Tverskaya St"); })
     .then(function () { return page.fill("#f-latitude", "55.7446675"); })
@@ -549,7 +632,7 @@ function run() {
       eq("latitude keeps every digit typed", s3.latitude, "55.7446675");
       eq("longitude too", s3.longitude, "37.5658937");
     })
-    .then(function () { return page.click('#store-list .card:has-text("S003")'); })
+    .then(function () { return page.click('#store-list .store-row:has-text("S003")'); })
     .then(function () { return page.locator("#f-latitude").inputValue(); })
     .then(function (value) {
       eq("and comes back into the form unchanged", value, "55.7446675");
@@ -612,7 +695,7 @@ function run() {
       console.log("reload");
       return page.reload();
     })
-    .then(function () { return page.locator("#store-list .card").count(); })
+    .then(function () { return page.locator("#store-list .store-row").count(); })
     .then(function (count) {
       eq("the stores survive a reload", count, 7);
       return page.locator("#topbar-sub").textContent();
@@ -721,7 +804,7 @@ function run() {
     // Not S001: the seed gave the server a 2030 timestamp for it, so the
     // pull correctly overwrites anything typed here. That is the rule
     // working, not a store to test an outbound edit on.
-    .then(function () { return page.click('#store-list .card:has-text("S002")'); })
+    .then(function () { return page.click('#store-list .store-row:has-text("S002")'); })
     .then(function () { return page.fill("#f-storeManager", "Edited After Signin"); })
     .then(function () { return page.click('#store-form button[type="submit"]'); })
     .then(function () { return page.waitForTimeout(2500); })
@@ -748,14 +831,14 @@ function run() {
     // First edit: gives the coming round something to push, so the hold on
     // that push actually engages.
     .then(function () { return page.click('.tab[data-screen="stores"]'); })
-    .then(function () { return page.click('#store-list .card:has-text("S004")'); })
+    .then(function () { return page.click('#store-list .store-row:has-text("S004")'); })
     .then(function () { return page.fill("#f-storeManager", "First Edit"); })
     .then(function () { return page.click('#store-form button[type="submit"]'); })
     // The round starts 1.5s after that write and then holds on its push.
     .then(function () { return page.waitForTimeout(1900); })
     // Second edit, landing inside that held push — after this round already
     // decided what to send. Dropping its sync is what lost whole imports.
-    .then(function () { return page.click('#store-list .card:has-text("S005")'); })
+    .then(function () { return page.click('#store-list .store-row:has-text("S005")'); })
     .then(function () { return page.fill("#f-storeManager", "Edited Mid Sync"); })
     .then(function () { return page.click('#store-form button[type="submit"]'); })
     .then(function () { return page.waitForTimeout(4000); })
@@ -782,7 +865,7 @@ function run() {
       });
     })
     .then(function () { return page.click('.tab[data-screen="stores"]'); })
-    .then(function () { return page.click('#store-list .card:has-text("S003")'); })
+    .then(function () { return page.click('#store-list .store-row:has-text("S003")'); })
     .then(function () { return page.fill("#f-storeManager", "Will Be Refused"); })
     .then(function () { return page.click('#store-form button[type="submit"]'); })
     .then(function () { return page.click('.tab[data-screen="targets"]'); })

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>RetailOS</title>
-<link rel="stylesheet" href="style.css?v=13">
+<link rel="stylesheet" href="style.css?v=14">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏬</text></svg>">
 </head>
 <body>
@@ -19,10 +19,16 @@
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-5h16l1 5"/><path d="M4 9v10a1 1 0 001 1h14a1 1 0 001-1V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></svg>
     </span>
     <h1>RetailOS</h1>
-    <span class="badge" id="mode-badge" title="Where data is stored">On this device</span>
   </div>
-  <div class="topbar-sub" id="topbar-sub"></div>
 </header>
+
+<div class="sidebar-search">
+  <button type="button" class="quick-search" id="btn-quick-search" title="Jump to the store search">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>
+    <span class="quick-search-label">Search</span>
+    <span class="kbd">Ctrl K</span>
+  </button>
+</div>
 
 <div class="tabs-label">Workspace</div>
 <nav class="tabs" role="tablist">
@@ -44,22 +50,64 @@
   </button>
 </nav>
 
+<div class="sidebar-foot">
+  <div class="foot-status">
+    <span class="status-dot" id="mode-dot" aria-hidden="true"></span>
+    <span class="badge" id="mode-badge" title="Where data is stored">On this device</span>
+  </div>
+  <div class="topbar-sub" id="topbar-sub"></div>
+</div>
+
 </div>
 <main>
 
   <!-- ───────────────────────── Stores ───────────────────────── -->
   <section class="screen is-active" id="screen-stores">
-    <h2>Stores</h2>
-    <div class="toolbar">
-      <input type="search" id="store-search" placeholder="Search stores" autocomplete="off">
-      <button class="btn btn-primary" id="btn-add-store">+ Store</button>
+    <div class="page-head">
+      <div class="page-title">
+        <div class="eyebrow">RetailOS</div>
+        <h2>Stores</h2>
+      </div>
+      <div class="page-actions">
+        <div class="search-box">
+          <svg class="search-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>
+          <input type="search" id="store-search" placeholder="Search stores" autocomplete="off">
+        </div>
+        <button class="btn btn-primary" id="btn-add-store">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          Store
+        </button>
+      </div>
     </div>
-    <p class="muted" id="store-count"></p>
-    <div id="store-list" class="cards"></div>
+
+    <div class="page-body stores-body">
+      <aside class="filter-rail" id="store-filters"></aside>
+      <div class="stores-main">
+        <div class="list-head">
+          <p class="muted" id="store-count"></p>
+          <div class="list-controls">
+            <label class="ctl-label" for="store-group">Group</label>
+            <select id="store-group" aria-label="Group stores by">
+              <option value="none">None</option>
+              <option value="brand">Brand</option>
+              <option value="channel">Channel</option>
+            </select>
+            <label class="ctl-label" for="store-sort">Sort</label>
+            <select id="store-sort" aria-label="Sort stores by">
+              <option value="name">Name</option>
+              <option value="id">Store ID</option>
+              <option value="brand">Brand</option>
+              <option value="channel">Channel</option>
+            </select>
+          </div>
+        </div>
+        <div id="store-list"></div>
+      </div>
+    </div>
   </section>
 
   <!-- ───────────────────────── Targets ───────────────────────── -->
-  <section class="screen" id="screen-targets">
+  <section class="screen screen-pad" id="screen-targets">
     <h2>Targets</h2>
     <div class="toolbar">
       <select id="target-view" aria-label="How to lay out the grid">
@@ -79,7 +127,7 @@
   </section>
 
   <!-- ───────────────────────── Import ───────────────────────── -->
-  <section class="screen" id="screen-import">
+  <section class="screen screen-pad" id="screen-import">
     <h2>Load from Excel</h2>
     <p class="muted">
       Two ways in. Either copy a block of cells straight out of Excel and paste it below,
@@ -143,7 +191,7 @@
   </section>
 
   <!-- ───────────────────────── Settings ───────────────────────── -->
-  <section class="screen" id="screen-settings">
+  <section class="screen screen-pad" id="screen-settings">
     <h2>Settings</h2>
 
     <div class="settings-grid">
@@ -308,7 +356,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="config.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="config.js?v=14"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

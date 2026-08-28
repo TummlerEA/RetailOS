@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 13;
+  var VERSION = 14;
 
   var K = {
     stores:   "retailos-stores",
@@ -1783,7 +1783,7 @@
       $("screen-" + id).classList.toggle("is-active", id === name);
       $("tab-" + id).classList.toggle("is-active", id === name);
     });
-    if (name === "stores") renderStores();
+    if (name === "stores") { renderFilterRail(); renderStores(); }
     if (name === "targets") renderTargets();
     if (name === "settings") renderSettings();
     setSubtitle();
@@ -1799,73 +1799,279 @@
     var badge = $("mode-badge");
     if (!badge) return;
     badge.className = "badge";
+    // The dot is a sibling, not a child: setting badge.textContent below
+    // would wipe it out if it lived inside.
+    var dot = "status-dot";
     if (!Remote.signedIn()) {
       badge.textContent = "On this device";
       badge.title = "Data is saved in this browser only";
     } else if (Sync.inFlight) {
       badge.textContent = "Syncing…";
       badge.title = "Talking to the server";
+      dot = "status-dot is-pipeline";
     } else if (Sync.lastError || Sync.behind.stores || Sync.behind.targets) {
       badge.textContent = "Sync failed";
       badge.className = "badge is-warn";
       badge.title = Sync.lastError;
+      dot = "status-dot is-bad";
     } else {
       badge.textContent = "Synced";
       badge.className = "badge is-ok";
       badge.title = "Signed in as " + Remote.email();
+      dot = "status-dot is-active";
     }
+    if ($("mode-dot")) $("mode-dot").className = dot;
   }
 
   /* ── stores ── */
 
+  // One facet may be picked at a time; clicking the same row again clears it.
+  var storeFilter = { status: null, channel: null, brand: null };
+  // Kept across re-renders so filtering does not fold the rail shut on mobile.
+  var railOpen = null;
+  // The Inactive section stays shut until it is opened, then stays open.
+  var inactiveOpen = false;
+
+  var STATUS_LABEL = { active: "Active", pipeline: "Pipeline", closed: "Closed" };
+
+  function statusOf(store) {
+    return STATUS_LABEL[store.status] ? store.status : "active";
+  }
+
+  function statusDot(status) {
+    return el("span", "status-dot" + (status === "active" ? " is-active"
+      : status === "pipeline" ? " is-pipeline" : ""));
+  }
+
+  function statusChip(status) {
+    var chip = el("span", "status-chip");
+    chip.appendChild(statusDot(status));
+    chip.appendChild(document.createTextNode(STATUS_LABEL[status]));
+    return chip;
+  }
+
+  // Counts are of everything, not of what the other facets have left, so the
+  // rail does not shuffle its numbers about as you click through it.
+  function renderFilterRail() {
+    var host = $("store-filters");
+    if (!host) return;
+    var all = Data.liveStores();
+    host.textContent = "";
+    if (!all.length) return;
+
+    if (railOpen === null) railOpen = window.innerWidth >= 900;
+
+    var rail = el("details", "rail");
+    rail.open = railOpen;
+    rail.addEventListener("toggle", function () { railOpen = rail.open; });
+    var summary = el("summary", null, "Filters");
+    rail.appendChild(summary);
+    var body = el("div", "rail-body");
+    rail.appendChild(body);
+
+    function facet(key, title, values, withDot) {
+      var present = values.filter(function (value) {
+        return all.some(function (s) { return facetValue(s, key) === value; });
+      });
+      if (!present.length) return;
+
+      var wrap = el("div");
+      wrap.appendChild(el("p", "filt-h", title));
+      var box = el("div", "facet");
+      present.forEach(function (value) {
+        var count = all.filter(function (s) { return facetValue(s, key) === value; }).length;
+        var on = storeFilter[key] === value;
+        var row = el("button", "frow" + (on ? " is-on" : ""));
+        row.type = "button";
+        row.setAttribute("aria-pressed", on ? "true" : "false");
+        var label = el("span", "frow-label");
+        if (withDot) label.appendChild(statusDot(value));
+        label.appendChild(el("span", null, withDot ? STATUS_LABEL[value] : value));
+        row.appendChild(label);
+        row.appendChild(el("span", "frow-count", count));
+        row.addEventListener("click", function () {
+          storeFilter[key] = on ? null : value;
+          renderFilterRail();
+          renderStores();
+        });
+        box.appendChild(row);
+      });
+      wrap.appendChild(box);
+      body.appendChild(wrap);
+    }
+
+    facet("status", "Status", ["active", "pipeline", "closed"], true);
+    facet("channel", "Channel", CHANNELS, false);
+    facet("brand", "Brand", BRANDS, false);
+
+    host.appendChild(rail);
+  }
+
+  function facetValue(store, key) {
+    if (key === "status") return statusOf(store);
+    if (key === "channel") return store.storeChannel || "";
+    return store.storeBrand || "";
+  }
+
+  function sortStores(list, by) {
+    function key(store) {
+      if (by === "id") return store.storeId || "";
+      if (by === "brand") return (store.storeBrand || "￿") + " " + (store.storeName || "");
+      if (by === "channel") return (store.storeChannel || "￿") + " " + (store.storeName || "");
+      return store.storeName || store.storeId || "";
+    }
+    return list.slice().sort(function (a, b) {
+      return String(key(a)).localeCompare(String(key(b)), undefined, { numeric: true, sensitivity: "base" });
+    });
+  }
+
   function renderStores() {
     var query = normHeader($("store-search").value);
     var all = Data.liveStores();
-    var list = query
-      ? all.filter(function (s) {
-          return normHeader(s.storeId + " " + s.storeName + " " + (s.storeManager || "")
-                            + " " + (s.storeChannel || "") + " " + (s.storeBrand || "")).indexOf(query) >= 0;
-        })
-      : all;
+    var group = $("store-group") ? $("store-group").value : "none";
+    var sort = $("store-sort") ? $("store-sort").value : "name";
+
+    var list = all.filter(function (s) {
+      if (query && normHeader(s.storeId + " " + s.storeName + " " + (s.storeManager || "")
+                              + " " + (s.storeChannel || "") + " " + (s.storeBrand || "")).indexOf(query) < 0) return false;
+      var keys = ["status", "channel", "brand"];
+      for (var i = 0; i < keys.length; i++) {
+        if (storeFilter[keys[i]] && facetValue(s, keys[i]) !== storeFilter[keys[i]]) return false;
+      }
+      return true;
+    });
 
     var host = $("store-list");
     host.textContent = "";
+    var narrowed = query || storeFilter.status || storeFilter.channel || storeFilter.brand;
     $("store-count").textContent = all.length
-      ? (query ? list.length + " of " + all.length + " stores" : all.length + (all.length === 1 ? " store" : " stores"))
+      ? (narrowed ? list.length + " of " + all.length + " stores"
+                  : all.length + (all.length === 1 ? " store" : " stores"))
       : "";
 
     if (!list.length) {
-      var empty = el("p", "empty", all.length
+      host.appendChild(el("p", "empty", all.length
         ? "Nothing matches that."
-        : "No stores yet. Add one, or load your list on the Import tab.");
-      host.appendChild(empty);
+        : "No stores yet. Add one, or load your list on the Import tab."));
       return;
     }
 
-    list.forEach(function (store) {
-      var card = el("button", "card" + (store.status === "closed" ? " is-closed" : ""));
-      card.type = "button";
-      var top = el("div", "card-top");
-      top.appendChild(el("span", "card-name", store.storeName || "(no name)"));
-      top.appendChild(el("span", "card-id", store.storeId));
-      card.appendChild(top);
+    list = sortStores(list, sort);
+    var active = list.filter(function (s) { return statusOf(s) === "active"; });
+    // Pipeline and closed are both "not trading today", so they share a
+    // section — each row still says which of the two it is.
+    var inactive = list.filter(function (s) { return statusOf(s) !== "active"; });
 
-      var meta = el("div", "card-meta");
-      if (store.storeBrand) meta.appendChild(el("span", "badge", store.storeBrand));
-      if (store.storeChannel) meta.appendChild(el("span", "badge", store.storeChannel));
-      if (store.storeManager) meta.appendChild(el("span", "muted-bit", store.storeManager));
-      if (store.country) meta.appendChild(el("span", "muted-bit", store.country));
-      var statusChip = el("span", "status-chip");
-      statusChip.appendChild(el("span", "status-dot" + (store.status === "active" ? " is-active"
-        : store.status === "pipeline" ? " is-pipeline" : "")));
-      statusChip.appendChild(document.createTextNode(store.status === "closed" ? "Closed"
-        : store.status === "pipeline" ? "Pipeline" : "Active"));
-      meta.appendChild(statusChip);
-      card.appendChild(meta);
+    if (active.length) host.appendChild(section("Active", active, group, true));
+    if (inactive.length) host.appendChild(section("Inactive", inactive, group, inactiveOpen));
+  }
 
-      card.addEventListener("click", function () { openStore(store.storeId); });
-      host.appendChild(card);
+  function section(title, stores, group, open) {
+    var sec = el("details", "sec");
+    sec.open = open;
+    if (title === "Inactive") {
+      sec.addEventListener("toggle", function () { inactiveOpen = sec.open; });
+    }
+
+    var summary = el("summary");
+    summary.appendChild(caret());
+    summary.appendChild(el("span", null, title));
+    summary.appendChild(el("span", "sec-count", stores.length));
+    sec.appendChild(summary);
+
+    var wrap = el("div", "list-wrap");
+    var table = el("table", "list");
+    var head = el("thead");
+    var headRow = el("tr");
+    [["Store", ""], ["Manager", "col-mgr"], ["Brand", ""], ["Channel", "col-chan"],
+     ["Country", "col-country"], ["Area", "col-area"], ["Status", ""]].forEach(function (col) {
+      headRow.appendChild(el("th", col[1] || null, col[0]));
     });
+    head.appendChild(headRow);
+    table.appendChild(head);
+
+    var body = el("tbody");
+    if (group === "none") {
+      stores.forEach(function (store) { body.appendChild(storeRow(store)); });
+    } else {
+      var seen = [];
+      stores.forEach(function (store) {
+        var value = facetValue(store, group) || "No " + group;
+        if (seen.indexOf(value) < 0) {
+          seen.push(value);
+          var groupRow = el("tr", "group-row");
+          var cell = el("td", null, value);
+          cell.colSpan = 7;
+          groupRow.appendChild(cell);
+          body.appendChild(groupRow);
+        }
+        body.appendChild(storeRow(store));
+      });
+    }
+    table.appendChild(body);
+    wrap.appendChild(table);
+    sec.appendChild(wrap);
+    return sec;
+  }
+
+  function caret() {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "sec-caret");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "12");
+    svg.setAttribute("height", "12");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "2.5");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M9 6l6 6-6 6");
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function storeRow(store) {
+    var status = statusOf(store);
+    var row = el("tr", "store-row" + (status === "active" ? "" : " is-dim"));
+    row.setAttribute("data-store-id", store.storeId);
+
+    var name = el("td");
+    name.appendChild(el("div", "store-name", store.storeName || "(no name)"));
+    name.appendChild(el("div", "store-id", store.storeId));
+    row.appendChild(name);
+
+    row.appendChild(el("td", "dim col-mgr", store.storeManager || "—"));
+
+    var brand = el("td");
+    if (store.storeBrand) brand.appendChild(el("span", "badge", store.storeBrand));
+    else brand.appendChild(document.createTextNode("—"));
+    row.appendChild(brand);
+
+    var channel = el("td", "col-chan");
+    if (store.storeChannel) channel.appendChild(el("span", "badge", store.storeChannel));
+    else channel.appendChild(document.createTextNode("—"));
+    row.appendChild(channel);
+
+    row.appendChild(el("td", "dim col-country", store.country || "—"));
+    row.appendChild(el("td", "dim col-area",
+      store.salesArea === undefined || store.salesArea === null || store.salesArea === ""
+        ? "—" : store.salesArea + " m²"));
+
+    var statusCell = el("td");
+    statusCell.appendChild(statusChip(status));
+    row.appendChild(statusCell);
+
+    row.addEventListener("click", function () { openStore(store.storeId); });
+    return row;
+  }
+
+  // There is one search in this app; the sidebar box and Ctrl-K both lead here.
+  function focusStoreSearch() {
+    showScreen("stores");
+    var box = $("store-search");
+    box.focus();
+    box.select();
   }
 
   var editingStoreId = null;
@@ -1927,6 +2133,7 @@
 
     error.hidden = true;
     $("store-dialog").close();
+    renderFilterRail();
     renderStores();
     setSubtitle();
     toast(editingStoreId ? "Saved" : "Store added");
@@ -1947,6 +2154,7 @@
     if (!confirm(warning)) return;
     Data.deleteStore(editingStoreId);
     $("store-dialog").close();
+    renderFilterRail();
     renderStores();
     setSubtitle();
     toast("Store deleted");
@@ -2595,6 +2803,7 @@
     if (result && (result.pulled || result.pushed)) {
       // A pull that changed something is on screen already only if the user
       // is looking at it, so redraw whichever screen that is.
+      renderFilterRail();
       renderStores();
       renderTargets();
       toast(syncSummary(result));
@@ -2732,6 +2941,15 @@
 
     /* stores */
     $("store-search").addEventListener("input", renderStores);
+    $("store-group").addEventListener("change", renderStores);
+    $("store-sort").addEventListener("change", renderStores);
+    $("btn-quick-search").addEventListener("click", focusStoreSearch);
+    document.addEventListener("keydown", function (event) {
+      if ((event.ctrlKey || event.metaKey) && (event.key === "k" || event.key === "K")) {
+        event.preventDefault();
+        focusStoreSearch();
+      }
+    });
     $("btn-add-store").addEventListener("click", function () { openStore(null); });
     $("store-form").addEventListener("submit", saveStoreFromForm);
     $("btn-cancel-store").addEventListener("click", function () { $("store-dialog").close(); });

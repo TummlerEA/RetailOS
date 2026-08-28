@@ -79,9 +79,13 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
   padding: max(env(safe-area-inset-top), 10px) 14px 8px;
 }
 .topbar-main { display: flex; align-items: center; gap: 10px; }
-.topbar-sub { color: var(--muted); font-size: 0.8rem; margin-top: 2px; min-height: 1.1em; }
+.topbar-sub { color: var(--muted-2); font-size: 0.78rem; }
 
-.brand-mark { display: none; }
+.brand-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  background: var(--accent-dim); color: var(--accent);
+}
 
 .badge {
   font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
@@ -91,6 +95,27 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 
 .badge.is-warn { color: var(--danger); border-color: var(--danger); }
 .badge.is-ok { color: var(--ok); border-color: var(--ok); }
+
+/* The sidebar search is a shortcut to the store search, not a second
+   search of its own — there is only one thing in this app to search. */
+.sidebar-search { display: none; }
+.quick-search {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  font: inherit; font-size: 0.85rem; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--muted); padding: 8px 10px; min-height: 0;
+}
+.quick-search:hover { border-color: var(--accent); }
+.quick-search-label { flex: 1; }
+.kbd { font-size: 0.66rem; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--muted-2); }
+
+.sidebar-foot {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px;
+  padding: 7px 14px; font-size: 0.78rem;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.foot-status { display: flex; align-items: center; gap: 7px; }
+.sidebar-foot .badge { background: none; border: 0; padding: 0; font-size: 0.78rem; }
 
 .tabs-label { display: none; }
 
@@ -111,12 +136,15 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .tab-icon { flex-shrink: 0; }
 .tab.is-active { color: var(--text); border-bottom-color: var(--accent); }
 
-main { padding: 14px; padding-bottom: max(env(safe-area-inset-bottom), 28px); max-width: 1100px; margin: 0 auto; }
+/* Screens carry their own padding: those built on .page-head pad through
+   the header band and body so the band's rule can span the full width. */
+main { padding: 0; padding-bottom: max(env(safe-area-inset-bottom), 28px); max-width: 1100px; margin: 0 auto; }
 .screen { display: none; }
 .screen.is-active { display: block; }
+.screen-pad { padding: 14px; }
 
 /* Desktop: fold the topbar and tabs into a real left sidebar. Nothing
-   moves in markup — only how these two elements are laid out changes. */
+   moves in markup — only how these elements are laid out changes. */
 @media (min-width: 900px) {
   .shell { display: flex; align-items: stretch; min-height: 100vh; }
 
@@ -128,27 +156,27 @@ main { padding: 14px; padding-bottom: max(env(safe-area-inset-bottom), 28px); ma
   }
 
   .topbar {
-    position: static; border-bottom: none;
-    padding: 20px 16px 10px;
+    position: static; border-bottom: none; background: none;
+    padding: 20px 16px 16px;
   }
-  .brand-mark {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
-    background: var(--accent-dim); color: var(--accent);
-  }
+
+  .sidebar-search { display: block; padding: 0 14px 16px; }
 
   .tabs-label {
     display: block;
     font-size: 0.68rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
-    color: var(--muted-2); padding: 10px 18px 6px;
+    color: var(--muted-2); padding: 8px 18px 6px;
   }
 
   .tabs {
-    position: static; flex: 1; flex-direction: column; gap: 2px;
-    border-bottom: none; overflow-x: visible;
+    position: static; flex: 0 0 auto; flex-direction: column; gap: 2px;
+    border-bottom: none; overflow-x: visible; background: none;
     padding: 0 10px;
   }
   .tab {
+    /* Without this the mobile strip's `flex: 1 0 auto` keeps applying, and
+       in a column it grows each tab to a quarter of the sidebar's height. */
+    flex: 0 0 auto;
     justify-content: flex-start; text-align: left;
     border-bottom: none; border-left: 3px solid transparent;
     border-radius: 8px; padding: 9px 10px;
@@ -159,10 +187,48 @@ main { padding: 14px; padding-bottom: max(env(safe-area-inset-bottom), 28px); ma
     border-left-color: var(--accent);
   }
 
+  /* The foot takes the slack, so the nav keeps its natural height. */
+  .sidebar-foot {
+    margin-top: auto; flex-direction: column; align-items: flex-start; gap: 6px;
+    background: none; border-bottom: none; border-top: 1px solid var(--line);
+    padding: 14px 16px;
+  }
+
   main {
     flex: 1; min-width: 0; max-width: none; margin: 0;
-    padding: 28px 32px;
+    padding: 0; padding-bottom: 0;
   }
+  .screen-pad { padding: 28px 32px; }
+}
+
+/* ── page header band ───────────────────────────────────── */
+
+.page-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap;
+  padding: 14px; border-bottom: 1px solid var(--line);
+}
+.eyebrow { font-size: 0.75rem; color: var(--muted-2); margin-bottom: 2px; }
+.page-head h2 { margin: 0; font-size: 1.25rem; font-weight: 700; }
+.page-actions { display: flex; align-items: center; gap: 10px; flex: 1; }
+.page-body { padding: 14px; }
+
+.search-box { position: relative; flex: 1; min-width: 0; }
+.search-box .search-icon {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); pointer-events: none;
+}
+.search-box input[type="search"] { width: 100%; padding-left: 32px; }
+
+@media (min-width: 900px) {
+  .page-head { padding: 22px 28px 18px; flex-wrap: nowrap; align-items: center; }
+  .page-body { padding: 22px 28px; }
+  .page-actions { flex: 0 0 auto; }
+  .search-box { flex: 0 0 220px; }
+  .page-actions .btn, .page-actions input, .page-actions select {
+    min-height: 36px; padding: 7px 12px; font-size: 0.88rem;
+  }
+  .search-box input[type="search"] { padding-left: 32px; }
 }
 
 /* ── controls ───────────────────────────────────────────── */
@@ -208,33 +274,115 @@ select { max-width: 100%; }
 .error { color: var(--danger); font-size: 0.85rem; }
 .danger-h { color: var(--danger); }
 
-/* ── store cards ────────────────────────────────────────── */
-
-.cards { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.card {
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 12px 14px; cursor: pointer; text-align: left; font: inherit; color: inherit;
-}
-.card:hover { border-color: var(--accent); }
-.card-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.card-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem; color: var(--muted); }
-.card-name { font-weight: 600; }
-.card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
-.card-meta .muted-bit { color: var(--muted); font-size: 0.82rem; }
-.card.is-closed { opacity: 0.55; }
+/* ── stores: filter rail ────────────────────────────────── */
 
 .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--muted-2); }
 .status-dot.is-active { background: var(--ok); }
 .status-dot.is-pipeline { background: var(--warn-line); }
+.status-dot.is-bad { background: var(--danger); }
 .status-chip { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.82rem; }
 
-/* Desktop: a list of stores reads better as one column, each row scanned
-   left to right, than as a card grid. */
+.stores-body { display: block; }
+.filter-rail { margin-bottom: 14px; }
+
+.rail > summary {
+  cursor: pointer; list-style: none;
+  font-size: 0.85rem; font-weight: 600; color: var(--muted);
+  padding: 9px 12px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius);
+}
+.rail > summary::-webkit-details-marker { display: none; }
+.rail-body { display: flex; flex-direction: column; gap: 16px; margin-top: 12px; }
+
+.filt-h {
+  font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted-2); margin: 0 0 8px; padding: 0 2px;
+}
+.facet { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.frow {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; text-align: left; font: inherit; font-size: 0.85rem;
+  padding: 10px 14px; min-height: 0;
+  border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+  background: none; color: var(--muted); cursor: pointer;
+}
+.frow:last-child { border-bottom: none; }
+.frow:hover { background: var(--surface-2); }
+.frow.is-on { background: var(--accent-dim); color: var(--text); font-weight: 600; }
+.frow-label { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.frow-label span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow-count { color: var(--muted-2); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.frow.is-on .frow-count { color: var(--muted); }
+
+/* ── stores: list ───────────────────────────────────────── */
+
+.list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.list-head .muted { margin: 0; }
+
+/* On a phone the count and the two selects do not share a line without
+   spilling past the padding, so give them one each. */
+@media (max-width: 599px) {
+  .list-head { flex-direction: column; align-items: stretch; }
+  .list-controls { justify-content: flex-end; }
+}
+.list-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; max-width: 100%; }
+.ctl-label { font-size: 0.8rem; color: var(--muted); }
+.list-controls select { min-height: 34px; padding: 5px 9px; font-size: 0.85rem; min-width: 0; }
+
+.sec {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden; margin-bottom: 12px;
+}
+.sec:last-child { margin-bottom: 0; }
+.sec > summary {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+  padding: 10px 14px; font-size: 0.7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-2);
+  background: var(--surface-2);
+}
+.sec > summary::-webkit-details-marker { display: none; }
+.sec-caret { flex-shrink: 0; transition: transform 0.15s; }
+.sec[open] > summary .sec-caret { transform: rotate(90deg); }
+.sec-count {
+  font-variant-numeric: tabular-nums; color: var(--muted);
+  background: var(--surface); border-radius: 999px; padding: 1px 8px;
+}
+
+.list-wrap { overflow-x: auto; }
+table.list { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+table.list th, table.list td { padding: 10px 14px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+table.list thead th {
+  background: var(--surface-2); font-size: 0.68rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-2);
+}
+table.list tbody tr:last-child td { border-bottom: none; }
+table.list td.dim { color: var(--muted); }
+
+.store-row { cursor: pointer; }
+.store-row:hover td { background: var(--surface-2); }
+.store-row.is-dim { opacity: 0.55; }
+.store-name { font-weight: 600; }
+.store-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.72rem; color: var(--muted-2); }
+
+.group-row td {
+  background: var(--bg); color: var(--muted-2); font-weight: 600;
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 7px 14px;
+}
+
+/* Narrow screens keep what identifies a store — name, brand, whether it is
+   trading — and drop the rest rather than pushing status off the edge. */
+@media (max-width: 899px) {
+  table.list .col-mgr, table.list .col-country,
+  table.list .col-area, table.list .col-chan { display: none; }
+  table.list th, table.list td { padding: 10px 12px; }
+}
+
 @media (min-width: 900px) {
-  .cards { grid-template-columns: 1fr; }
-  .card { display: flex; align-items: center; gap: 16px; padding: 10px 14px; }
-  .card-top { flex: 0 0 240px; flex-direction: column; align-items: flex-start; gap: 1px; }
-  .card-meta { flex: 1; margin-top: 0; }
+  .stores-body { display: flex; align-items: flex-start; gap: 22px; }
+  .filter-rail { flex: 0 0 184px; margin-bottom: 0; }
+  .rail > summary { display: none; }
+  .rail-body { margin-top: 0; gap: 20px; }
+  .stores-main { flex: 1; min-width: 0; }
 }
 
 .empty { text-align: center; color: var(--muted); padding: 44px 16px; font-size: 0.9rem; }
