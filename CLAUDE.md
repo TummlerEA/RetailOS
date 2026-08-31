@@ -82,6 +82,10 @@ deliberately strict about what it means:
 - **Bump the version in one commit**: `VERSION` in `app.js`, all three `?v=`
   in `index.html`, and `version.json`. `test_version.js` fails otherwise.
   The `?v=` is what makes browsers fetch the new files.
+- **Log every real change in `log.md`**, newest entry on top, in the same
+  commit as the change. A paragraph of *why*, not a diff — the diff is in
+  git. This is the one record that spans both the cloud sessions and the
+  local ones, so it is read before git log, not after.
 - **`schema.sql` is idempotent and is the upgrade path.** There are no
   separate migration files. `create table if not exists` does nothing to an
   existing table, so every constraint is dropped by name and re-added on
