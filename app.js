@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var VERSION = 14;
+  var VERSION = 15;
 
   var K = {
     stores:   "retailos-stores",
@@ -55,6 +55,16 @@
 
   var MONTH_NAMES = ["january", "february", "march", "april", "may", "june",
                      "july", "august", "september", "october", "november", "december"];
+
+  // Both grammatical forms a Russian month name is written in: "март" on
+  // its own, "марта" in "план марта". Same order as MONTH_NAMES, so an
+  // index into one is an index into the other.
+  var RU_MONTH_NAMES = [
+    ["январь", "января"], ["февраль", "февраля"], ["март", "марта"],
+    ["апрель", "апреля"], ["май", "мая"], ["июнь", "июня"],
+    ["июль", "июля"], ["август", "августа"], ["сентябрь", "сентября"],
+    ["октябрь", "октября"], ["ноябрь", "ноября"], ["декабрь", "декабря"]
+  ];
 
   /* ═══════════════════ small helpers ═══════════════════ */
 
@@ -276,6 +286,33 @@
       return finishMonth(y2, i2 + 1);
     }
 
+    // Сентябрь-26, Сентября 2026, сентябрь — a Russian month name, in
+    // either the plain or the "of September" form. Exact only: a header or
+    // a cell value drives what a column means, so this stays as strict as
+    // the English branch above rather than tolerating a typo.
+    m = /^([Ѐ-ӿ]{3,12})[\s\-./]*(\d{2}|\d{4})?$/.exec(text);
+    if (m) {
+      var ruIndex = ruMonthNameIndex(m[1]);
+      if (ruIndex < 0) return { error: "not a month name" };
+      if (!m[2]) {
+        if (!defaultYear) return { error: "no year — set the year to assume" };
+        return { key: monthKey(defaultYear, ruIndex) };
+      }
+      var ruYear = parseInt(m[2], 10);
+      if (m[2].length === 2) ruYear += ruYear < 70 ? 2000 : 1900;
+      return finishMonth(ruYear, ruIndex + 1);
+    }
+
+    // 26 Сентябрь, 2026 сентября
+    m = /^(\d{2}|\d{4})[\s\-./]+([Ѐ-ӿ]{3,12})$/.exec(text);
+    if (m) {
+      var ri2 = ruMonthNameIndex(m[2]);
+      if (ri2 < 0) return { error: "not a month name" };
+      var ry2 = parseInt(m[1], 10);
+      if (m[1].length === 2) ry2 += ry2 < 70 ? 2000 : 1900;
+      return finishMonth(ry2, ri2 + 1);
+    }
+
     return { error: "unreadable month" };
   }
 
@@ -291,6 +328,58 @@
     if (lower.length < 3) return -1;
     for (var i = 0; i < 12; i++) if (MONTH_NAMES[i].indexOf(lower) === 0) return i;
     return -1;
+  }
+
+  // Russian isn't abbreviated the way "Sept" is — it arrives full length
+  // with a case ending, so this checks both forms outright rather than
+  // taking a prefix.
+  function ruMonthNameIndex(name) {
+    var lower = String(name).toLowerCase();
+    for (var i = 0; i < RU_MONTH_NAMES.length; i++) {
+      if (RU_MONTH_NAMES[i].indexOf(lower) >= 0) return i;
+    }
+    return -1;
+  }
+
+  // Edit distance between two short strings — just enough to tell "one
+  // Cyrillic keystroke away" from "a different word", which is all a
+  // typo'd month name needs.
+  function levenshtein(a, b) {
+    var m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    var prev = [], curr = [];
+    for (var j = 0; j <= n; j++) prev[j] = j;
+    for (var i = 1; i <= m; i++) {
+      curr[0] = i;
+      for (var k = 1; k <= n; k++) {
+        var cost = a.charAt(i - 1) === b.charAt(k - 1) ? 0 : 1;
+        curr[k] = Math.min(prev[k] + 1, curr[k - 1] + 1, prev[k - 1] + cost);
+      }
+      var tmp = prev; prev = curr; curr = tmp;
+    }
+    return prev[n];
+  }
+
+  // Only for mining a banner's free text for the month it names (see
+  // monthFromBanner) — never for a header or a value cell, where a typo
+  // that happened to read as the wrong month would corrupt the data
+  // silently rather than being reported. One edit is allowed, but not on
+  // март, май, июнь or июль: at four letters or fewer, one edit can land on
+  // a different month, so those stay exact.
+  function ruMonthNameFuzzy(word) {
+    var lower = String(word).toLowerCase();
+    if (lower.length < 3) return -1;
+    var bestIndex = -1, bestDist = 2;
+    for (var i = 0; i < RU_MONTH_NAMES.length; i++) {
+      for (var f = 0; f < RU_MONTH_NAMES[i].length; f++) {
+        var form = RU_MONTH_NAMES[i][f];
+        var maxOk = form.length <= 4 ? 0 : 1;
+        var dist = levenshtein(lower, form);
+        if (dist <= maxOk && dist < bestDist) { bestDist = dist; bestIndex = i; }
+      }
+    }
+    return bestIndex;
   }
 
   /* ═══════════════════ data ═══════════════════
@@ -1330,15 +1419,14 @@
   }
 
   /*
-   * Decides what a grid of cells is. Target files from a business are
-   * usually wide — stores down the side, months across the top — because
-   * that is how they are built and reviewed; asking for them unpivoted
-   * first is how a tool stops being used.
+   * Reads one candidate header row and decides what its columns are. Kept
+   * apart from detectLayout below so that a banner sitting above the real
+   * header — a merged "Plan for September" title over an otherwise blank
+   * row, which a business export very often carries — can be tried and
+   * rejected without duplicating this.
    */
-  function detectLayout(rows, defaultYear) {
-    if (!rows.length) return { kind: "empty" };
-    var header = rows[0] || [];
-
+  function analyseHeader(header, defaultYear) {
+    header = header || [];
     var monthCols = [];
     var storeIdCol = -1;
     var monthCol = -1;
@@ -1346,6 +1434,7 @@
     var metricCols = {};
     var storeFieldCols = {};
     var ignored = [];
+    var used = {};
 
     for (var c = 0; c < header.length; c++) {
       var cell = header[c];
@@ -1356,18 +1445,33 @@
       if (storeKey) {
         if (storeKey === "storeId" && storeIdCol < 0) storeIdCol = c;
         if (storeFieldCols[storeKey] === undefined) storeFieldCols[storeKey] = c;
+        used[c] = true;
         continue;
       }
-      if (MONTH_SYN.indexOf(norm) >= 0 && monthCol < 0) { monthCol = c; continue; }
-      if (METRIC_COL_SYN.indexOf(norm) >= 0 && metricCol < 0) { metricCol = c; continue; }
+      if (MONTH_SYN.indexOf(norm) >= 0 && monthCol < 0) { monthCol = c; used[c] = true; continue; }
+      if (METRIC_COL_SYN.indexOf(norm) >= 0 && metricCol < 0) { metricCol = c; used[c] = true; continue; }
 
       var metric = matchMetric(cell);
-      if (metric && metricCols[metric] === undefined) { metricCols[metric] = c; continue; }
+      if (metric && metricCols[metric] === undefined) { metricCols[metric] = c; used[c] = true; continue; }
 
       var asMonth = parseMonth(cell, defaultYear);
-      if (asMonth.key) { monthCols.push({ at: c, month: asMonth.key }); continue; }
+      if (asMonth.key) { monthCols.push({ at: c, month: asMonth.key }); used[c] = true; continue; }
 
       ignored.push(String(cell));
+    }
+
+    // A blank cell over the leftmost column, with several target columns
+    // recognised elsewhere in the row, is a row-label column that was
+    // never given a name — the corner cell above the store names is left
+    // empty as often as not. Only the corner gets this: a header that is
+    // present but unrecognised is still reported as ignored above, never
+    // guessed at.
+    if (storeIdCol < 0 && storeFieldCols.storeName === undefined && !used[0] &&
+        Object.keys(metricCols).length >= 2) {
+      var corner = header[0];
+      if (corner === null || corner === undefined || String(corner).trim() === "") {
+        storeFieldCols.storeName = 0;
+      }
     }
 
     var base = {
@@ -1384,7 +1488,82 @@
       return Object.assign(base, { kind: "stores" });
     }
     if (monthCols.length === 1) return Object.assign(base, { kind: "targets-wide" });
+    // A full set of metric columns over a store name, but no month column
+    // and no months across the top: the month applies to the whole sheet
+    // rather than to any one row. detectLayout looks for it in whatever
+    // was skipped over to reach this header.
+    if (Object.keys(metricCols).length >= 2 && storeFieldCols.storeName !== undefined) {
+      return Object.assign(base, { kind: "targets-long" });
+    }
     return Object.assign(base, { kind: "unknown" });
+  }
+
+  // Mines a banner's free text for the one month it names. Looser than
+  // parseMonth itself: a title is prose, not a value, so a word within it
+  // is tried on its own, and a Russian month name gets one typo's worth of
+  // tolerance (see ruMonthNameFuzzy) that parseMonth deliberately withholds
+  // everywhere else. The worst a wrong guess here does is pre-fill an
+  // editable field the preview shows before anything is written.
+  function monthFromBanner(bannerRows, defaultYear) {
+    for (var r = 0; r < bannerRows.length; r++) {
+      var row = bannerRows[r] || [];
+      for (var c = 0; c < row.length; c++) {
+        var text = cleanText(row[c]);
+        if (!text) continue;
+
+        var direct = parseMonth(text, defaultYear);
+        if (direct.key) return direct.key;
+
+        var words = text.split(/\s+/).filter(Boolean);
+        for (var w = 0; w < words.length; w++) {
+          var exact = parseMonth(words[w], defaultYear);
+          if (exact.key) return exact.key;
+
+          var ruIndex = ruMonthNameFuzzy(words[w]);
+          if (ruIndex < 0) continue;
+          var neighbour = words[w - 1] || words[w + 1];
+          var year = neighbour && /^\d{4}$/.test(neighbour) ? parseInt(neighbour, 10) : defaultYear;
+          if (year) return monthKey(year, ruIndex);
+        }
+      }
+    }
+    return null;
+  }
+
+  function nonBlankCount(row) {
+    return (row || []).filter(function (c) { return c !== null && c !== undefined && String(c).trim() !== ""; }).length;
+  }
+
+  /*
+   * Decides what a grid of cells is. Target files from a business are
+   * usually wide — stores down the side, months across the top — because
+   * that is how they are built and reviewed; asking for them unpivoted
+   * first is how a tool stops being used.
+   */
+  function detectLayout(rows, defaultYear) {
+    if (!rows.length) return { kind: "empty" };
+
+    // Try the first row as the header. A banner above the real header —
+    // one merged title cell over an otherwise blank row — reads as nothing
+    // recognisable and has next to nothing else on it, unlike an ordinary
+    // data row that simply does not fit a known shape. Only that specific
+    // case falls through to the second row, and the row skipped over is
+    // kept for its month, never for anything that decides what a column
+    // means.
+    var headerRow = 0;
+    var layout = analyseHeader(rows[0], defaultYear);
+    var looksLikeBanner = (layout.kind === "unknown" || layout.kind === "empty") && nonBlankCount(rows[0]) <= 1;
+    if (looksLikeBanner && rows.length > 1) {
+      var second = analyseHeader(rows[1], defaultYear);
+      if (second.kind !== "unknown" && second.kind !== "empty") { layout = second; headerRow = 1; }
+    }
+
+    layout.headerRow = headerRow;
+    layout.dataStart = headerRow + 1;
+    if (headerRow > 0 && layout.monthCol < 0 && !layout.monthCols.length) {
+      layout.impliedMonth = monthFromBanner(rows.slice(0, headerRow), defaultYear);
+    }
+    return layout;
   }
 
   function cleanText(value) {
@@ -1538,9 +1717,10 @@
       notes[note] = (notes[note] || 0) + 1;
       return "";
     }
-    for (var r = 1; r < rows.length; r++) {
+    for (var r = layout.dataStart || 1; r < rows.length; r++) {
       var row = rows[r] || [];
       var id = cleanText(row[layout.storeIdCol]);
+      if (isTotalRow(id)) continue;
       if (!id) {
         if (row.some(function (c) { return cleanText(c) !== ""; })) {
           out.push({ bad: "No store ID on this row", raw: describeRow(row) });
@@ -1586,6 +1766,16 @@
 
   function describeRow(row) {
     return row.map(cleanText).filter(Boolean).slice(0, 3).join(" · ") || "(blank)";
+  }
+
+  // A grand-total row left in a targets grid ("Общий итог", "Итого",
+  // "Total") is not a store, and its numbers are the sum of the real rows
+  // above it — reading it as one would double the file's own total.
+  var TOTAL_ROW_WORDS = ["total", "totals", "grandtotal", "subtotal",
+                          "итого", "общийитог", "итог", "всего"];
+  function isTotalRow(text) {
+    var norm = normHeader(text);
+    return !!norm && TOTAL_ROW_WORDS.indexOf(norm) >= 0;
   }
 
   // The store list, indexed both ways: by ID to check a target's key and
@@ -1634,11 +1824,16 @@
       seen[key][metricKey] = read.value;
     }
 
-    for (var r = 1; r < rows.length; r++) {
+    for (var r = layout.dataStart || 1; r < rows.length; r++) {
       var row = rows[r] || [];
       var id = layout.storeIdCol >= 0 ? cleanText(row[layout.storeIdCol]) : "";
       var named = nameCol !== undefined ? cleanText(row[nameCol]) : "";
 
+      if (isTotalRow(id) || isTotalRow(named)) {
+        notes["came from a totals row, not a store, and were left out"] =
+          (notes["came from a totals row, not a store, and were left out"] || 0) + 1;
+        continue;
+      }
 
       // A file with no ID column can still be placed, as long as the name
       // picks out exactly one store. Two stores sharing a name is not
@@ -1697,9 +1892,16 @@
           record(id, col.month, metricKey, row[col.at], id + " " + monthLabel(col.month), r);
         });
       } else {
-        var parsed = parseMonth(row[layout.monthCol], defaultYear);
+        // No Month column at all is not the same as a month that failed to
+        // parse: the whole sheet can be one month, named once in a banner
+        // above the header (detectLayout) or picked on screen when it
+        // cannot be — see field-month in the import screen.
+        var monthRaw = layout.monthCol >= 0 ? row[layout.monthCol] : layout.impliedMonth;
+        var parsed = layout.monthCol >= 0
+          ? parseMonth(monthRaw, defaultYear)
+          : (layout.impliedMonth ? { key: layout.impliedMonth } : { error: "no month found for this sheet" });
         if (!parsed.key) {
-          out.push({ bad: 'Month "' + cleanText(row[layout.monthCol]) + '" — ' + parsed.error, raw: id });
+          out.push({ bad: 'Month "' + cleanText(monthRaw) + '" — ' + parsed.error, raw: id });
           continue;
         }
         if (layout.metricCol >= 0) {
@@ -2386,6 +2588,8 @@
     $("import-file").value = "";
     $("import-report").textContent = "";
     $("field-metric").hidden = true;
+    $("field-month").hidden = true;
+    $("import-month").value = "";
   }
 
   function onImportFile(event) {
@@ -2474,32 +2678,46 @@
         + "a Store ID column plus either months across the top, or a Month column and one column per target.");
       return;
     }
-    if (layout.kind !== "stores" && layout.monthCol < 0 && !layout.monthCols.length) {
-      importFailed("No months found. Either put a Month column in, or head the value columns with the months themselves.");
-      return;
+
+    // No Month column and no months across the top: the whole sheet can
+    // still be one month, named in a banner above the header (detectLayout
+    // already tried) or picked here when it could not be found on its own.
+    var noMonthColumn = layout.kind !== "stores" && layout.monthCol < 0 && !layout.monthCols.length;
+    $("field-month").hidden = !noMonthColumn;
+    if (noMonthColumn) {
+      if (layout.impliedMonth && !$("import-month").value) $("import-month").value = layout.impliedMonth;
+      layout.impliedMonth = $("import-month").value || null;
+      if (!layout.impliedMonth) {
+        importFailed("No month found in this sheet. Say which month it is above, then Preview again.");
+        return;
+      }
     }
-    if (layout.kind !== "stores" && layout.storeIdCol < 0) {
-      importFailed("No Store ID column found. Name it 'Store ID', 'Store' or 'Store No'.");
+    if (layout.kind !== "stores" && layout.storeIdCol < 0 &&
+        (!layout.storeFieldCols || layout.storeFieldCols.storeName === undefined)) {
+      importFailed("No Store ID or Store Name column found. Name a column 'Store ID', 'Store' or 'Name'.");
       return;
     }
 
     var box = el("div", "report");
     if (importState.sheets && importState.sheets.length > 1) box.appendChild(sheetPicker());
 
+    var rowCount = rows.length - (layout.dataStart || 1);
     var summary, diff, notes = {};
     if (layout.kind === "stores") {
       var storesBuilt = buildStoreRows(rows, layout);
       diff = diffStores(storesBuilt.items);
       notes = storesBuilt.notes;
-      summary = "Read as a store list — " + (rows.length - 1) + " rows.";
+      summary = "Read as a store list — " + rowCount + " rows.";
     } else {
       var built = buildTargetRows(rows, layout, year, $("import-metric").value,
                                   storeIndex(Data.liveStores()));
       diff = diffTargets(built.items);
       notes = built.notes;
       summary = layout.kind === "targets-wide"
-        ? "Read as targets with months across the top — " + layout.monthCols.length + " months × " + (rows.length - 1) + " rows."
-        : "Read as targets, one row per store-month — " + (rows.length - 1) + " rows.";
+        ? "Read as targets with months across the top — " + layout.monthCols.length + " months × " + rowCount + " rows."
+        : noMonthColumn
+          ? "Read as targets for " + monthLabel(layout.impliedMonth) + " — " + rowCount + " rows."
+          : "Read as targets, one row per store-month — " + rowCount + " rows.";
     }
 
     box.appendChild(el("p", "muted", summary));
@@ -2986,7 +3204,7 @@
       runPreview();
     });
     $("btn-clear-import").addEventListener("click", clearImport);
-    ["import-kind", "import-metric", "import-year"].forEach(function (id) {
+    ["import-kind", "import-metric", "import-year", "import-month"].forEach(function (id) {
       $(id).addEventListener("change", function () { if (importState.rows) runPreview(); });
     });
     $("import-paste").addEventListener("paste", function () {

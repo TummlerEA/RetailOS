@@ -75,6 +75,17 @@ eq("label", app.monthLabel("2026-03"), "Mar 2026");
 eq("shift forward over a year end", app.shiftMonth("2026-11", 2), "2027-01");
 eq("shift back", app.shiftMonth("2026-01", -1), "2025-12");
 
+// Russian month names, exact only — parseMonth itself never guesses at a
+// typo, so this stays as strict as the English branch above. The banner
+// miner (tested below) is where a typo gets tolerated.
+eq("Cyrillic name needs a year", app.parseMonth("сентябрь").key, undefined);
+eq("Cyrillic name with default year", app.parseMonth("сентябрь", 2026).key, "2026-09");
+eq("Cyrillic genitive form", app.parseMonth("сентября", 2026).key, "2026-09");
+eq("Cyrillic name with year", app.parseMonth("Сентябрь 2026").key, "2026-09");
+eq("year then Cyrillic name", app.parseMonth("2026 сентября").key, "2026-09");
+eq("short Cyrillic name, unmisspelled", app.parseMonth("май", 2026).key, "2026-05");
+eq("a typo is not read as a month here", app.parseMonth("сентябоь", 2026).key, undefined);
+
 /* ── delimited text ── */
 
 group("delimited text");
@@ -306,6 +317,60 @@ near("SOT, with its spaces and thousands comma", first.sot, 1511);
 near("the file's own arithmetic holds", app.impliedSales(first), 15112500);
 eq("so nothing is flagged as inconsistent",
    app.checksFor(first).filter(function (c) { return c.off; }).length, 0);
+
+/* ── one month for the whole sheet, named in a banner above the header ── */
+
+group("a plan for one month, banner and all");
+// A merged title row over the real header, a blank corner above the store
+// names instead of a header, and a grand-total row at the foot — a shape
+// none of it a Month column, seen wholesale from a real September export.
+var planRows = [
+  ["", "план сентябоь", ""],
+  ["", "Sales", "Traffic", "CR%", "UPT", "ASP", "SOT"],
+  ["JNS МОС Авиапарк", "9 974 250", "6600", "7,50%", "1,55", "13000", "1 511"],
+  ["JNS МОС Атриум", "7 488 000", "3000", "12,00%", "1,60", "13000", "2 496"],
+  ["Общий итог", "146 065 605", "162 750", " ", " ", " ", "897"]
+];
+var planLayout = app.detectLayout(planRows, 2026);
+eq("the header is found one row down, past the banner", planLayout.headerRow, 1);
+eq("data starts after it", planLayout.dataStart, 2);
+eq("it still reads as one row per store", planLayout.kind, "targets-long");
+eq("nothing is ignored", planLayout.ignored.length, 0);
+eq("the blank corner is read as the store name", planLayout.storeFieldCols.storeName, 0);
+eq("the misspelled banner still names the month, given a year to assume",
+   planLayout.impliedMonth, "2026-09");
+
+var planIndex = app.storeIndex([
+  { storeId: "0Ц-000018", storeName: "JNS МОС Авиапарк" },
+  { storeId: "0Ц-000019", storeName: "JNS МОС Атриум" }
+]);
+var planBuilt = app.buildTargetRows(planRows, planLayout, 2026, null, planIndex);
+var planGood = planBuilt.items.filter(function (i) { return i.row; });
+eq("both stores come in, the totals row does not", planGood.length, 2);
+eq("every row lands in the banner's month", planGood[0].row.month, "2026-09");
+near("sales, thousands and all", planGood[0].row.sales, 9974250);
+near("CR%, comma decimal and all", planGood[0].row.conversion, 0.075);
+near("UPT, comma decimal", planGood[0].row.upt, 1.55);
+near("SOT, with its own thousands space", planGood[0].row.sot, 1511);
+eq("the totals row is noted, not reported as a bad row",
+   planBuilt.notes["came from a totals row, not a store, and were left out"], 1);
+eq("and it does not show up in the reject list either",
+   planBuilt.items.filter(function (i) { return i.bad; }).length, 0);
+
+// Without a year to assume and without a parseable banner, the sheet still
+// comes back as this shape — just with no month guessed at, so the import
+// screen knows to ask for one instead of failing outright.
+var noYearLayout = app.detectLayout(planRows, null);
+eq("no year to assume means no month guessed", noYearLayout.impliedMonth, null);
+eq("but the shape is still recognised", noYearLayout.kind, "targets-long");
+
+// A banner is read loosely; an ordinary data row is not mistaken for one.
+// Three populated columns and a header that simply does not match a known
+// field must stay "unknown" rather than borrowing the row below it.
+var plainUnknown = app.detectLayout(
+  [["Месяц", "Код магазина", "Средний чек"], ["01.08.2026", "S1", "500"]], null);
+eq("a real header with an unmapped column is not swapped for the data row",
+   plainUnknown.headerRow, 0);
 
 /* ── Russian headers, as a fallback behind the English ones ── */
 

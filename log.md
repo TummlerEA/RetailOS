@@ -13,6 +13,38 @@ is in git. See `CLAUDE.md` for the rest of the repo's rules.
 
 ---
 
+## v15 — 2026-08-31 — A single-month plan sheet imports as-is
+A real September targets file arrived shaped like a business actually builds
+one: a merged "план сентябоь" title row (misspelled) sitting over the real
+header, a blank corner cell above the store names instead of a "Name"
+header, six metric columns (Sales/Traffic/CR%/UPT/ASP/SOT) with no Month
+column anywhere because the whole sheet is one month, and a "Общий итог"
+grand-total row at the foot. None of that is a file to be edited into shape
+first — every one of those is a convention a spreadsheet is built with.
+
+`detectLayout` now tries the first row as the header and, only when it reads
+as nothing recognisable *and* has at most one populated cell (a banner, not
+an ordinary data row that simply doesn't fit), tries the row below instead.
+A blank header cell over the leftmost column, sitting above real metric
+columns, is read as the store name — the corner cell is left empty as often
+as it's labelled. Six metric columns with a store name and no month
+information at all is a new recognised shape: the month applies to the
+whole sheet, mined out of whatever banner text was skipped over
+(`monthFromBanner`), with a "Which month is this?" field in the import
+screen for when it can't be. A totals row is recognised by name (English
+and Russian) and left out with a note rather than failing as an unmatched
+store. Parsing the banner needed Russian month names at all, which the app
+never had — added exact (`parseMonth`) and, for banner text only, one
+Cyrillic keystroke's worth of typo tolerance (`ruMonthNameFuzzy`), so a
+title elsewhere in the file could misread its own month without corrupting
+any header or per-row value, which stay exact.
+
+Two latent bugs surfaced and got fixed alongside this: the import screen's
+own guards required a Store ID column even though `buildTargetRows` has
+supported a name-only file since v-whenever-that-shipped, and the "N rows"
+summary always said `rows.length - 1` regardless of how many rows the
+header itself took up.
+
 ## v14 — 2026-08-28 — Sidebar nav, faceted store list, Active/Inactive grouping
 First of four passes putting the v13 mockup's actual *layout* back, not just
 its colours. Fixed a one-line sidebar bug (`.tab`'s mobile `flex: 1 0 auto`

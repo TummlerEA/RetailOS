@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>RetailOS</title>
-<link rel="stylesheet" href="style.css?v=14">
+<link rel="stylesheet" href="style.css?v=15">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏬</text></svg>">
 </head>
 <body>
@@ -148,6 +148,12 @@
       <label for="import-metric">Which target is in the grid?</label>
       <select id="import-metric"></select>
       <p class="hint">The columns look like months, so every number is one metric. Say which.</p>
+    </div>
+
+    <div class="field" id="field-month" hidden>
+      <label for="import-month">Which month is this?</label>
+      <input type="month" id="import-month">
+      <p class="hint">No Month column and nothing above the header names one either. Say which month this sheet is for.</p>
     </div>
 
     <div class="field">
@@ -356,7 +362,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="config.js?v=14"></script>
-<script src="app.js?v=14"></script>
+<script src="config.js?v=15"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

@@ -75,6 +75,15 @@ deliberately strict about what it means:
   counted — never written through, because the database will refuse it and
   the error would surface far from the cause.
 - A store name next to a store ID is a **check on it**, not decoration.
+- A grand-total row ("Total", "Итого", "Общий итог"…) is recognised by name
+  and left out with a note, never read as a store.
+- A sheet can carry one month for the whole grid instead of a Month column —
+  the month is mined from a banner row above the header if there is one
+  (Russian month names included, with a little typo tolerance since that
+  text never decides what a column *means*), or asked for once on screen
+  when it can't be found. A banner row itself is recognised by having next
+  to nothing else on it; an ordinary row that simply doesn't parse is never
+  mistaken for one.
 - Nothing is written until the preview has been seen and Apply pressed.
 
 ## Rules of the repo
